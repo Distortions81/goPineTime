@@ -1,0 +1,6 @@
+{
+  "description": "Deterministic transport model, not measured radio performance. All times are milliseconds.",
+  "image_bytes": 47200,
+  "latency_bound": {"one_way_ms": 30, "wire_ms": 2, "flash_ms": 8, "enqueue_ms": 1, "verify_ms": 80},
+  "flash_bound": {"one_way_ms": 2, "wire_ms": 1, "flash_ms": 200, "enqueue_ms": 1, "verify_ms": 80}
+}

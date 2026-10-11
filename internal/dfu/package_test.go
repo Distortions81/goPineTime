@@ -3,9 +3,11 @@ package dfu
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -89,12 +91,12 @@ func TestImageAndZIP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	image, err := Image(testBody(128), v) // 128 + 32 + 40 == 200: legacy DFU edge case
+	image, err := Image(testBody(128), v) // 128 + 32 + 40 == 200: exact image length
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(image) != 204 || !bytes.Equal(image[200:], []byte{255, 255, 255, 255}) {
-		t.Fatal("missing legacy 200-byte-buffer workaround")
+	if len(image) != 200 {
+		t.Fatal("unexpected compatibility padding")
 	}
 	if image[20] != 1 || image[21] != 2 || binary.LittleEndian.Uint16(image[22:24]) != 345 ||
 		binary.LittleEndian.Uint32(image[24:28]) != 6789 {
@@ -124,36 +126,23 @@ func TestImageAndZIP(t *testing.T) {
 		}
 		files[f.Name] = data
 	}
-	if len(files) != 3 || !bytes.Equal(files["test-image.bin"], image) {
+	if len(files) != 2 || !bytes.Equal(files["test-image.bin"], image) {
 		t.Fatal("wrong zip contents")
 	}
-	dat := files["test-image.dat"]
-	if len(dat) != 14 || !bytes.Equal(dat[:12], []byte{0x52, 0, 255, 255, 255, 255, 255, 255, 1, 0, 0xfe, 0xff}) ||
-		binary.LittleEndian.Uint16(dat[12:]) != CRC16(image) {
-		t.Fatal("incorrect Nordic legacy init packet")
-	}
 	var manifest struct {
-		Manifest struct {
-			Version     float64 `json:"dfu_version"`
-			Application struct {
-				Bin  string `json:"bin_file"`
-				Dat  string `json:"dat_file"`
-				Init struct {
-					CRC     uint16 `json:"firmware_crc16"`
-					Type    uint16 `json:"device_type"`
-					Version uint32 `json:"application_version"`
-				} `json:"init_packet_data"`
-			} `json:"application"`
-		} `json:"manifest"`
+		Format   string `json:"format"`
+		Protocol int    `json:"protocol"`
+		Image    string `json:"image"`
+		SHA256   string `json:"sha256"`
 	}
 	if err := json.Unmarshal(files["manifest.json"], &manifest); err != nil {
 		t.Fatal(err)
 	}
-	a := manifest.Manifest.Application
-	if manifest.Manifest.Version != 0.5 || a.Bin != "test-image.bin" || a.Dat != "test-image.dat" ||
-		a.Init.CRC != CRC16(image) || a.Init.Type != 0x52 || a.Init.Version != 0xffffffff {
-		t.Fatal("incorrect legacy manifest")
+	if manifest.Format != "gopine-update" || manifest.Protocol != 2 || manifest.Image != "test-image.bin" ||
+		manifest.SHA256 != fmt.Sprintf("%x", sha256.Sum256(image)) {
+		t.Fatal("incorrect native manifest")
 	}
+
 }
 
 func TestVersionAndBounds(t *testing.T) {
@@ -167,9 +156,7 @@ func TestVersionAndBounds(t *testing.T) {
 			t.Errorf("rejected %q: %v", s, err)
 		}
 	}
-	if CRC16([]byte("123456789")) != 0x29b1 {
-		t.Fatal("not CRC-16/CCITT-FALSE")
-	}
+
 	body := testBody(ota.MaxImageSize)
 	if _, err := Image(body, Version{}); err == nil {
 		t.Fatal("accepted oversized image")

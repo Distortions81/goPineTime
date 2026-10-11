@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DirectUpdater, UpdateError, decodeStatus, PHASE, UUIDS} from './protocol.mjs';
 
-const timing = {pollIntervalMs: 0, retryDelayMs: 0, ackTimeoutMs: 30,
+const timing = {retryDelayMs: 0, ackTimeoutMs: 30,
   verifyTimeoutMs: 30, noProgressTimeoutMs: 50, operationTimeoutMs: 100};
 const image = Uint8Array.from({length: 101}, (_, i) => i);
-function statusBytes({phase = 1, total = 0, offset = 0, session = 0, mtu = 20, error = 0, protocol = 1} = {}) {
+function statusBytes({phase = 1, total = 0, offset = 0, session = 0, mtu = 20, error = 0, protocol = 2} = {}) {
   const bytes = new Uint8Array(16), view = new DataView(bytes.buffer);
   bytes.set([protocol, phase, error, mtu]);
   view.setUint32(4, total, true); view.setUint32(8, offset, true); view.setUint32(12, session, true);
@@ -15,7 +15,7 @@ class MockWatch {
   constructor(options = {}) {
     this.options = options;
     this.status = {phase: PHASE.WAITING, total: 0, offset: 0, session: 0, mtu: options.mtu ?? 20, ...options.status};
-    this.writes = []; this.commands = []; this.received = new Uint8Array(image.length);
+    this.writes = []; this.commands = []; this.received = new Uint8Array(options.imageLength ?? image.length);
     this.connections = 0; this.reads = 0; this.inflight = 0; this.maxInflight = 0;
     this.pending = null;
     this.gatt = {
@@ -32,8 +32,11 @@ class MockWatch {
     this.server = {getPrimaryService: uuid => this.call(async () => {
       assert.equal(uuid, UUIDS.service); await options.onService?.(this); return this.service;
     })};
+    this.statusCharacteristic = new EventTarget();
+    this.statusCharacteristic.readValue = () => this.read();
+    this.statusCharacteristic.startNotifications = () => this.call(async () => this.statusCharacteristic);
     this.service = {getCharacteristic: uuid => this.call(() => {
-      if (uuid === UUIDS.status) return {readValue: () => this.read()};
+      if (uuid === UUIDS.status) return this.statusCharacteristic;
       if (uuid === UUIDS.control) return {writeValueWithResponse: bytes => this.control(bytes)};
       if (uuid === UUIDS.data) return {writeValueWithResponse: bytes => this.write(bytes)};
       throw new Error('Unexpected characteristic');
@@ -54,6 +57,17 @@ class MockWatch {
       return result ?? statusBytes(this.status);
     });
   }
+  notifyPending() {
+    const pending = this.pending;
+    if (!pending || !Number.isFinite(pending.waits)) return;
+    setTimeout(async () => {
+      if (this.pending !== pending || !this.gatt.connected) return;
+      pending.commit(); this.pending = null;
+      const result = await this.options.onRead?.(this);
+      this.statusCharacteristic.value = result ?? statusBytes(this.status);
+      this.statusCharacteristic.dispatchEvent(new Event('characteristicvaluechanged'));
+    }, pending.waits);
+  }
   control(bytes) {
     return this.call(async () => {
       const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -73,6 +87,7 @@ class MockWatch {
         this.pending = {waits: this.options.verifyDelay ?? 0, commit: () => { this.status.phase = PHASE.READY; }};
       }
       await this.options.onControl?.(this, command);
+      this.notifyPending();
     });
   }
   write(bytes) {
@@ -90,6 +105,7 @@ class MockWatch {
         this.received.set(payload, offset); this.status.offset += payload.length;
       }};
       await this.options.onWrite?.(this, bytes);
+      this.notifyPending();
     });
   }
 }
@@ -102,7 +118,7 @@ test('status parser respects DataView slices and rejects malformed fields', () =
   assert.equal(decodeStatus(new DataView(bytes.buffer, 7, 16)).chunk, 192);
   assert.equal(decodeStatus(statusBytes({mtu: 20})).chunk, 12);
   assert.equal(decodeStatus(statusBytes({mtu: 8})).chunk, 0);
-  for (const status of [new Uint8Array(15), statusBytes({protocol: 2}), statusBytes({phase: 6}),
+  for (const status of [new Uint8Array(15), statusBytes({protocol: 1}), statusBytes({phase: 6}),
     statusBytes({offset: 1}), statusBytes({error: 1}), statusBytes({phase: PHASE.FAILED})]) {
     assert.throws(() => decodeStatus(status), UpdateError);
   }
@@ -112,8 +128,11 @@ test('transfers sequentially with 12-byte payloads and delayed flash acknowledge
   const instance = updater(watch, {onProgress: (done, total) => {
     assert.equal(done, watch.status.offset); assert.equal(total, image.length); progress.push(done);
   }, onState: ({phase}) => states.push(phase)});
-  assert.deepEqual(await instance.run(), {session: 42, bytes: image.length});
+  const result = await instance.run();
+  assert.equal(result.session, 42); assert.equal(result.bytes, image.length);
+  assert.ok(result.timings.total >= result.timings.data && result.timings.verify >= 0);
   assert.equal(watch.maxInflight, 1);
+  assert.equal(watch.reads, watch.connections, "Only one status read per connection");
   assert.deepEqual(watch.writes.map(write => write.offset), [0, 12, 24, 36, 48, 60, 72, 84, 96]);
   assert.deepEqual(watch.received, image);
   assert.deepEqual(watch.commands, [1, 2]);
@@ -359,4 +378,20 @@ test('copies the firmware and rejects concurrent run calls', async () => {
   await assert.rejects(instance.run(), /already running/);
   await running;
   assert.deepEqual(watch.received, image);
+});
+
+test('uses 236-byte payloads and only one status read at MTU 247', async () => {
+  const largeImage = Uint8Array.from({length: 500}, (_, index) => index & 255);
+  const watch = new MockWatch({mtu: 244, imageLength: largeImage.length});
+  await updater(watch, {image: largeImage}).run();
+  assert.deepEqual(watch.writes.map(write => write.payload.length), [236, 236, 28]);
+  assert.deepEqual(watch.received, largeImage);
+  assert.equal(watch.reads, 1);
+  assert.equal(watch.maxInflight, 1);
+});
+test('rejects protocol-1 receivers before sending any firmware', async () => {
+  const watch = new MockWatch({onRead: () => statusBytes({protocol: 1})});
+  await assert.rejects(updater(watch).run(), /0.3.22.*protocol 2/);
+  assert.deepEqual(watch.writes, []);
+  assert.deepEqual(watch.commands, []);
 });

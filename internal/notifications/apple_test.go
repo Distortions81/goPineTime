@@ -8,8 +8,9 @@ func applePacket(uid uint32, event, flags byte, title, body string) []byte {
 		p[i] = byte(uid >> uint(i*8))
 	}
 	p[4], p[5], p[6] = event, 4, flags
+	p[147] = 1
 	copy(p[7:47], title)
-	copy(p[47:], body)
+	copy(p[47:147], body)
 	return p
 }
 func TestAppleNotificationLifecycleAndSession(t *testing.T) {
@@ -56,6 +57,40 @@ func TestApplePreExistingSilentBoundsAndUIDZero(t *testing.T) {
 	for _, p := range [][]byte{nil, make([]byte, 146), make([]byte, 148), applePacket(1, 4, 0, "Bad", "Bad")} {
 		if changed, buzz := b.ApplyApple(p); changed || buzz {
 			t.Fatal("accepted malformed record")
+		}
+	}
+}
+
+func TestApplePeerUIDsAndDisconnectsAreIndependent(t *testing.T) {
+	var b Inbox
+	packet := func(source, event byte, body string) []byte {
+		p := applePacket(42, event, 0, "Messages", body)
+		p[147] = source
+		return p
+	}
+	b.ApplyApple(packet(1, 0, "Phone A"))
+	a := b.Messages[0].ID
+	b.ApplyApple(packet(2, 0, "Phone B"))
+	second := b.Messages[0].ID
+	if b.Count != 2 || a == second {
+		t.Fatal("equal remote UIDs merged across devices")
+	}
+	b.ApplyApple(packet(1, 1, "Updated A"))
+	if Text(b.Find(a).Body[:]) != "Updated A" || Text(b.Find(second).Body[:]) != "Phone B" {
+		t.Fatal("one device updated another device's notification")
+	}
+	b.ApplyApple(packet(1, 2, ""))
+	if b.Find(a) != nil || b.Find(second) == nil {
+		t.Fatal("removal crossed device boundary")
+	}
+	b.ApplyApple(packet(1, 0, "New A"))
+	b.ApplyApple(packet(1, 3, ""))
+	if b.Count != 1 || b.Find(second) == nil {
+		t.Fatal("disconnect cleared another device's notifications")
+	}
+	for _, source := range []byte{0, 3, 255} {
+		if changed, _ := b.ApplyApple(packet(source, 3, "")); changed || b.Find(second) == nil {
+			t.Fatal("invalid source cleared inbox")
 		}
 	}
 }

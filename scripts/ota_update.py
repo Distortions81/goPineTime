@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build/validate first, then upload immediately when recovery is ready (Linux)."""
+"""Build/validate first, then upload immediately when goPine is ready (Linux)."""
 import argparse
 import datetime
 import fcntl
@@ -10,12 +10,11 @@ import os
 import pathlib
 import re
 import secrets
-import shutil
 import subprocess
 import sys
 import threading
 
-import ota_upload
+import ota_package
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / 'build/ota'
@@ -26,40 +25,25 @@ def target_config(address, adapter, saved):
     address = address or saved.get('address', '')
     adapter = adapter or saved.get('adapter', '')
     if not re.fullmatch(r'(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}', address):
-        raise ValueError('Specify --address WATCH_RECOVERY_MAC on the first run')
+        raise ValueError('Specify --address WATCH_GOPINE_MAC on the first run')
     if not re.fullmatch(r'hci[0-9]+', adapter):
         raise ValueError('Specify --adapter hci1 (or your chosen USB adapter) on the first run')
     return {'address': address.upper(), 'adapter': adapter}
 
 
-def ensure_vendor():
-    if not ota_upload.VENDOR.exists():
-        subprocess.run(['git', 'clone', '--filter=blob:none', '--no-checkout',
-                        'https://github.com/InfiniTimeOrg/InfiniTime.git', str(ota_upload.VENDOR)], check=True)
-        subprocess.run(['git', '-C', str(ota_upload.VENDOR), 'checkout', '--detach', ota_upload.PIN], check=True)
-    ota_upload.load_sender() # Verify source and import dependencies before recovery.
-
-
 def prepare(args):
     if not re.fullmatch(r'\d+\.\d+\.\d+(?:\+\d+)?', args.version):
         raise ValueError('Version must be major.minor.revision[+build]')
-    if sys.platform != 'linux' or not shutil.which('gatttool'):
-        raise ValueError('Linux with BlueZ gatttool is required (install the bluez package)')
-    direct = getattr(args, 'direct', False)
+    if sys.platform != 'linux':
+        raise ValueError('Linux with BlueZ is required')
+    import bleak  # Fail before the watch is put into update mode.
     saved = json.loads(CONFIG.read_text()) if CONFIG.exists() else {}
-    if direct:
-        import bleak  # Fail before the watch is put into update mode.
-        saved = dict(saved)
-        # Firmware uses the recovery identity with the low address byte flipped.
-        if saved.get('address'):
-            parts = saved['address'].split(':')
-            parts[-1] = f'{int(parts[-1], 16) ^ 1:02X}'
-            saved['address'] = ':'.join(parts)
+    if saved.get('mode') != 'gopine':
+        saved = {}  # Old saved targets are recovery identities, never guess.
     target = target_config(args.address, args.adapter, saved)
     if not pathlib.Path('/sys/class/bluetooth', target['adapter']).exists():
         raise ValueError(f"Bluetooth adapter {target['adapter']} is missing")
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    ensure_vendor()
     package = args.package
     if package is None:
         tinygo = os.environ.get('TINYGO', 'tinygo')
@@ -71,9 +55,9 @@ def prepare(args):
         subprocess.run([tinygo, 'build', '-target=./targets/pinetime-gopine.json',
                         '-o', str(OUTPUT/'toolchain-check.elf'), '.'], cwd=ROOT, check=True)
         subprocess.run(['bash', 'scripts/build-ota.sh', '--ble', args.version], cwd=ROOT, check=True)
-        package = OUTPUT / f'gopine-dfu-{args.version}.zip'
+        package = OUTPUT / f'gopine-update-{args.version}.zip'
     package = package.resolve()
-    digest, version, image, _ = ota_upload.read_package(package, version=args.version)
+    digest, version, image, _ = ota_package.read_package(package, version=args.version)
     # Freeze the prepared bytes: another build must not change the queued image.
     prepared = OUTPUT / 'prepared' / f'{digest}.zip'
     prepared.parent.mkdir(exist_ok=True)
@@ -81,26 +65,24 @@ def prepare(args):
     if hashlib.sha256(data).hexdigest() != digest:
         raise ValueError('Package changed during preparation')
     prepared.write_bytes(data)
-    if not direct:
-        CONFIG.write_text(json.dumps(target, indent=2)+'\n')
+    CONFIG.write_text(json.dumps(dict(target, mode="gopine"), indent=2)+'\n')
     print(f"Ready: {version}, {len(image):,} bytes, SHA-256 {digest}", flush=True)
     print(f"Target: {target['address']} via {target['adapter']}", flush=True)
-    return UploadJob(prepared, digest, version, target, direct=direct)
+    return UploadJob(prepared, digest, version, target)
 
 
 class UploadJob:
-    def __init__(self, package, digest, version, target, direct=False):
+    def __init__(self, package, digest, version, target):
         self.package, self.digest, self.version, self.target = package, digest, version, target
         self.lock = threading.Lock()
         self.state, self.progress, self.logs = 'ready', 0, []
         self.worker = None
-        self.direct = direct
         self.session = secrets.randbelow(0xffffffff) + 1
 
     def snapshot(self):
         with self.lock:
             return dict(state=self.state, progress=self.progress, logs=list(self.logs),
-                        version=self.version, sha256=self.digest, direct=self.direct, **self.target)
+                        version=self.version, sha256=self.digest, **self.target)
 
     def append(self, line):
         print(line, flush=True)
@@ -122,7 +104,7 @@ class UploadJob:
 
     def confirm(self):
         with self.lock:
-            if self.state not in ('awaiting_keep', 'awaiting_install'):
+            if self.state != 'awaiting_install':
                 return False
             self.state = 'confirmed'
             return True
@@ -137,12 +119,10 @@ class UploadJob:
                 logpath = OUTPUT / f'upload-{self.version}-{stamp}.log'
                 with logpath.open('w') as log:
                     log.write(f'{self.version} {self.digest} {self.target}\n')
-                    sender = 'direct_upload.py' if self.direct else 'ota_upload.py'
-                    command = [sys.executable, '-u', str(ROOT/'scripts'/sender),
+                    command = [sys.executable, '-u', str(ROOT/'scripts/direct_upload.py'),
                                '--package', str(self.package), '--sha256', self.digest,
                                '--adapter', self.target['adapter'], '--address', self.target['address']]
-                    if self.direct:
-                        command += ['--session', str(self.session)]
+                    command += ['--session', str(self.session)]
                     with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                           stdin=subprocess.DEVNULL, text=True) as process:
                         for line in process.stdout:
@@ -152,7 +132,7 @@ class UploadJob:
         except Exception as error:
             self.append(f'Updater stopped: {error}')
         with self.lock:
-            self.state = {0: 'awaiting_install' if self.direct else 'awaiting_keep', 3: 'awaiting_keep', 1: 'connection_failed'}.get(result, 'failed')
+            self.state = {0: 'awaiting_install', 1: 'connection_failed'}.get(result, 'failed')
 
 
 def make_server(job, port):
@@ -215,14 +195,13 @@ def serve(job, port):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('version')
-    parser.add_argument('--address', help='Recovery MAC, saved locally after first use')
+    parser.add_argument('--address', help='goPine MAC, saved locally after first use')
     parser.add_argument('--adapter', help='Bluetooth adapter, saved locally after first use')
     parser.add_argument('--package', type=pathlib.Path, help='Use an existing ZIP instead of building')
     parser.add_argument('--web', action='store_true', help='Serve local browser controls after preparing')
     parser.add_argument('--port', type=int, default=8765)
-    parser.add_argument('--ready', action='store_true', help='Recovery already ready: upload immediately after preparation')
+    parser.add_argument('--ready', action='store_true', help='Watch already ready: upload immediately after preparation')
     parser.add_argument('--prepare-only', action='store_true', help='Build and validate, then exit without connecting')
-    parser.add_argument('--direct', action='store_true', help='Update within goPine 0.3.13 or later; recovery is not used')
     args = parser.parse_args()
     job = prepare(args)
     if args.prepare_only:
@@ -231,14 +210,14 @@ def main():
         serve(job, args.port)
         return 0
     if not args.ready:
-        input('Open Firmware update on goPine and hold to connect, then press Enter. ' if args.direct else 'NOW open Firmware update on the watch, enter recovery, then press Enter to upload immediately. ')
+        input('Open Firmware Update on goPine and hold to connect, then press Enter. ')
     job.start()
     job.worker.join()
     state = job.snapshot()['state']
-    if state in ('awaiting_keep', 'awaiting_install'):
-        print('Tap INSTALL on the watch, then KEEP after reboot.' if args.direct else 'Check the watch and tap KEEP. Upload validation does not prove successful boot.')
+    if state == 'awaiting_install':
+        print('Tap INSTALL on the watch, then KEEP after reboot.')
         return 0
-    print('Read the watch message and use Retry on its update screen.' if args.direct else 'Restart recovery before retrying. No automatic transfer retry.')
+    print('Read the watch message and use Retry on its update screen.')
     return 1
 
 

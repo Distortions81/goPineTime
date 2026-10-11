@@ -44,9 +44,9 @@ func configureBoardI2C() error {
 
 func (t *touchController) Configure() error {
 	touchResetPin.Configure(machine.PinConfig{Mode: machine.PinOutput})
-	resetTouchController(touchResetPin.Set, time.Sleep)
+	resetTouchController(touchResetPin.Set, pauseWithRadio)
 
-	if err := configureTouchRegisters(boardI2C{}, time.Sleep); err != nil {
+	if err := configureTouchRegisters(boardI2C{}, pauseWithRadio); err != nil {
 		return err
 	}
 
@@ -67,7 +67,7 @@ func (t *touchController) Sleep() {
 	disableTouchInterrupt()
 	t.ready, t.asleep = false, true
 	t.tracker = touchTracker{}
-	if err := sleepTouchController(boardI2C{}, touchResetPin.Set, time.Sleep); err != nil {
+	if err := sleepTouchController(boardI2C{}, touchResetPin.Set, pauseWithRadio); err != nil {
 		// A failed controller must not keep generating IRQs or wake the LCD.
 		// Hold reset until the next wake can try a fresh initialization.
 		touchResetPin.Low()
@@ -79,8 +79,8 @@ func (t *touchController) Wake() {
 		return
 	}
 	t.asleep = false
-	resetTouchController(touchResetPin.Set, time.Sleep)
-	if err := configureTouchRegisters(boardI2C{}, time.Sleep); err == nil {
+	resetTouchController(touchResetPin.Set, pauseWithRadio)
+	if err := configureTouchRegisters(boardI2C{}, pauseWithRadio); err == nil {
 		_ = t.enableInterrupt()
 	}
 }

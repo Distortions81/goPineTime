@@ -11,7 +11,7 @@ import {UpdateDiagnostics, browserDescription} from './diagnostics.mjs';
 const source = readFileSync(new URL('./app.mjs', import.meta.url), 'utf8');
 const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
 const manifest = {schema: 1, firmware: {
-  version: '0.3.15', package: 'firmware/gopine-dfu-0.3.15.zip', sha256: 'a'.repeat(64),
+  version: '0.3.15', package: 'firmware/gopine-update-0.3.15.zip', sha256: 'a'.repeat(64),
   releaseUrl: 'https://github.com/Distortions81/goPineTime/releases/tag/v0.3.15',
 }};
 const packageBytes = Uint8Array.of(1, 2, 3, 4);
@@ -75,7 +75,7 @@ function app(options = {}) {
     }
     async run() {
       this.runs++; this.active = true;
-      try { return await options.updaterRun(this); }
+      try { return await options.updaterRun(this) ?? {timings: {total: 12.3, data: 10.1, verify: 1.2}}; }
       finally { this.active = false; }
     }
     disconnect() { this.disconnects++; }
@@ -423,4 +423,15 @@ test('clipboard writes are serialized even after Start over begins a new attempt
   await page.get('copy-diagnostics').emit('click');
   assert.equal(copies.length, 2);
   assert.match(copies[1], /New attempt failure/);
+});
+
+
+test('successful verification shows measured phase timings and leaves installation on the watch', async () => {
+  const page = app({fetch: url => new Response(url.endsWith('.json') ? JSON.stringify(manifest) : packageBytes),
+    updaterRun: async () => ({timings: {total: 12.3, data: 10.1, verify: 1.2}})});
+  await until(() => !page.get('connect').disabled);
+  await page.get('connect').emit('click');
+  assert.equal(page.get('confirmed').hidden, false);
+  assert.equal(page.get('phase').textContent, 'Verified on watch');
+  assert.match(page.get('status').textContent, /12\.3s.*10\.1s.*1\.2s.*INSTALL.*KEEP/);
 });

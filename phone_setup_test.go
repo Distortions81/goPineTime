@@ -141,6 +141,31 @@ func TestPhoneSetupWaitingSaveResumesAtBoundedDeadline(t *testing.T) {
 	}
 }
 
+func TestSecondDevicePairingDefersSettingsSaveWithFirstDevicePlaying(t *testing.T) {
+	f, j, _ := clockTestStorage(t)
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	u := newWatchUI(firmwareConfirmed)
+	p := loadSettings(&u, now, j)
+	u.openPhone()
+	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 154}, now, firmwareConfirmed, powerStatus{})
+	r := &twoDeviceRadio{peers: 2, trusted: 1}
+	r.report(music.LinkMusicReady, true, 1)
+	c := timeSyncController{radio: r}
+	c.update(&u, now, 80)
+	c.saveSettings(&u, p, now, true)
+	u.page = pageClock
+	c.saveSettings(&u, p, now.Add(phoneSetupDuration+time.Second), true)
+	if !c.running || r.stops != 0 || f.writes != 0 {
+		t.Fatal("first device's music state hid second device security from settings persistence")
+	}
+	r.trusted = 2
+	c.update(&u, now.Add(phoneSetupDuration+2*time.Second), 80)
+	c.saveSettings(&u, p, now.Add(phoneSetupDuration+2*time.Second), true)
+	if f.writes == 0 || r.stops != 1 || c.running {
+		t.Fatal("settings save failed to resume after both devices authenticated")
+	}
+}
+
 func TestPhoneSetupAllowsButtonSleepAndStopsKeepingAwakeAfterAuthentication(t *testing.T) {
 	for _, manual := range []bool{false, true} {
 		d := &setupDisplay{scriptDisplay: newScriptDisplay()}

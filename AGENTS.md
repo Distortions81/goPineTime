@@ -6,9 +6,11 @@ Start the prepared uploader immediately. Do not ask an initial readiness or
 mode question, request another confirmation, or run a preliminary scan that
 delays the connection. The request authorizes the firmware transfer.
 
-Use **goPine's in-app update by default**. Use InfiniTime recovery only when
-the goPine update method is broken or the user explicitly says recovery is
-running. Do not assume recovery merely because a previous update used it.
+Use **goPine's in-app update**. The maintained uploader supports OTA protocol 2
+(goPine 0.3.22 and newer); legacy recovery upload tools have been removed.
+Emergency bootloader recovery and rollback remain available. Recovery uses
+external compatible DFU tools and official InfiniTime packages, not native
+protocol-2 goPine packages. Do not enter recovery for a normal update.
 
 The configured watch uses the TP-Link USB adapter **hci1**. goPine's address
 is **C9:9E:15:7A:69:B4**; recovery uses **C9:9E:15:7A:69:B5**. Do not enable
@@ -17,11 +19,19 @@ with the appropriate mode:
 
 ```sh
 build/ota/venv/bin/python -u scripts/ota_update.py VERSION \
-  --package build/ota/gopine-dfu-VERSION.zip \
-  --adapter hci1 --address C9:9E:15:7A:69:B4 --direct --ready
+  --package build/ota/gopine-update-VERSION.zip \
+  --adapter hci1 --address C9:9E:15:7A:69:B4 --ready
 ```
 
-For actual recovery, use the recovery address and omit `--direct`.
+For the first transition from 0.3.21 to the current 0.3.23 candidate, the old in-app sender is prepared
+locally. Start it immediately when the user requests that update:
+
+```sh
+bash build/ota/v1-transition/run-0.3.23.sh
+```
+
+This one-time transition is still an in-app upload with INSTALL and KEEP. Its
+preserved sender is not a compatibility path in the maintained updater.
 If the package still needs preparation, finish that work before asking the
 user to reopen a short connection window. Ask for a restart or mode clarification
 only after an actual failure or conflicting evidence. Describe what failed and

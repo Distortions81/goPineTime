@@ -18,7 +18,10 @@
 #include "music_mailbox.h"
 #include "notification_mailbox.h"
 #include "update_mailbox.h"
+#include "update_links.h"
+#include "update_tuning.h"
 #include "battery_security.h"
+#include "device_info.h"
 #include "phone_time.h"
 #include "ancs.h"
 
@@ -30,6 +33,7 @@ static bool initialized, synced, window, pending;
 static uint16_t connection = BLE_HS_CONN_HANDLE_NONE;
 static uint8_t address_type, incoming[10], incoming_len, current[10], battery_level;
 static uint16_t battery_handle;
+static struct device_info device_information;
 static uint32_t received_at, expires_at;
 static uint32_t disconnect_after;
 static uint32_t fast_until;
@@ -38,34 +42,161 @@ static int init_failure;
 static bool host_up, stopping, stop_complete;
 static bool lifecycle_changed;
 static bool weather_window, phone_window, unbounded, slow_advertising;
-static bool music_subscribed;
 static uint16_t music_handle;
 static uint32_t peer_generation;
-static struct music_mailbox music_incoming;
 static struct weather_mailbox weather_incoming;
-static struct notification_mailbox notification_incoming;
 static struct update_mailbox update_incoming;
-static struct phone_time_mailbox phone_time_incoming;
+struct phone_peer {
+    uint16_t handle;
+    uint32_t generation,security_retry_at,close_retry_at;
+    bool security_pending,music_subscribed,battery_subscribed,close_requested,terminating;
+    bool battery_snapshot_pending,battery_snapshot_sent;
+    struct music_mailbox music;
+    struct weather_mailbox weather;
+    struct notification_mailbox notification;
+    struct phone_time_mailbox time;
+};
+static struct phone_peer phone_peers[2];
+static bool music_snapshot_dirty,phone_advertising_pending;
+static unsigned time_cursor,weather_cursor,notification_cursor;
+static struct phone_peer *phone_peer_find(uint16_t handle) {
+    if(handle==BLE_HS_CONN_HANDLE_NONE)return NULL;
+    for(unsigned i=0;i<2;i++)if(phone_peers[i].handle==handle)return &phone_peers[i];
+    return NULL;
+}
+static void phone_peers_reset(void) {
+    memset(phone_peers,0,sizeof(phone_peers));
+    for(unsigned i=0;i<2;i++)phone_peers[i].handle=BLE_HS_CONN_HANDLE_NONE;
+    connection=BLE_HS_CONN_HANDLE_NONE;
+    music_snapshot_dirty=true;phone_advertising_pending=false;
+    time_cursor=weather_cursor=notification_cursor=0;
+}
+static struct phone_peer *phone_peer_add(uint16_t handle) {
+    for(unsigned i=0;i<2;i++) {
+        struct phone_peer *peer=&phone_peers[i];
+        if(peer->handle!=BLE_HS_CONN_HANDLE_NONE)continue;
+        memset(peer,0,sizeof(*peer));peer->handle=handle;
+        if(!++peer_generation)++peer_generation;
+        peer->generation=peer_generation;
+        music_clear(&peer->music);
+        if(connection==BLE_HS_CONN_HANDLE_NONE) {
+            connection=handle;music_snapshot_dirty=true;
+        }
+        return peer;
+    }
+    return NULL;
+}
+static void phone_peer_close(struct phone_peer *peer) {
+    if(!peer->close_requested)peer->close_retry_at=ble_npl_time_get();
+    peer->close_requested=true;peer->security_pending=false;
+}
+unsigned gopine_ble_peer_count(void) {
+    if(!window || !phone_window)return 0;
+    unsigned count=0;
+    for(unsigned i=0;i<2;i++)if(phone_peers[i].handle!=BLE_HS_CONN_HANDLE_NONE)count++;
+    return count;
+}
+unsigned gopine_ble_trusted_peer_count(void) {
+    if(!window || !phone_window)return 0;
+    unsigned count=0;
+    for(unsigned i=0;i<2;i++)if(phone_link_ready(phone_peers[i].handle))count++;
+    return count;
+}
 static bool update_window;
 static uint32_t pairing_code; // Code + 1; zero means no active prompt.
-static bool pairing_io_pending, security_pending;
-static uint16_t pairing_connection;
+static bool pairing_io_pending;
+static uint16_t pairing_connection=BLE_HS_CONN_HANDLE_NONE;
 static uint16_t last_security_status, last_disconnect_reason;
 static uint16_t pairing_progress;
+// Bounded non-secret trace survives phone retries and an OTA-mode handoff.
+// Records: uptime ms (LE32), event, phase/round low byte, result (LE16).
+static uint8_t pairing_trace[196] = {1};
+static unsigned trace_count;
+static void trace_pairing(uint8_t event,uint16_t result) {
+    if(trace_count==24) {
+        memmove(pairing_trace+4,pairing_trace+12,23*8);
+        trace_count--;
+    }
+    uint8_t *record=pairing_trace+4+trace_count++*8;
+    uint32_t now=ble_npl_time_get();
+    for(unsigned i=0;i<4;i++)record[i]=(uint8_t)(now>>(i*8));
+    record[4]=event;record[5]=(uint8_t)pairing_progress;
+    record[6]=(uint8_t)result;record[7]=(uint8_t)(result>>8);
+    pairing_trace[1]=(uint8_t)trace_count;
+    pairing_trace[2]=(uint8_t)(pairing_progress>>8);
+}
+void gopine_ble_trace_security(uint8_t event,uint16_t status) {
+    // Only these non-secret SM outcomes are accepted across the port boundary.
+    // OTA lookup traffic must not replace the retained Phone failure trace.
+    if(phone_window && (event==16 || event==17)) trace_pairing(event,status);
+}
+// Security metadata only: no key bytes or peer identifiers. Distinguish a
+// stored record from a usable authenticated bond, and this peer from another.
+static uint8_t trace_key_flags(const struct ble_store_value_sec *key) {
+    return 1 | (key->ltk_present?2:0) | (key->authenticated?4:0) |
+           (key->sc?8:0) | (key->key_size==16?16:0);
+}
+static uint16_t trace_bond_flags(const ble_addr_t *peer) {
+    struct ble_store_key_sec key={.peer_addr=*peer};
+    struct ble_store_value_sec value;
+    uint16_t flags=0;
+    if(!ble_store_read_our_sec(&key,&value))flags=trace_key_flags(&value);
+    if(!ble_store_read_peer_sec(&key,&value))flags|=(uint16_t)trace_key_flags(&value)<<8;
+    return flags;
+}
 extern uint16_t gopine_sm_progress(uint16_t conn_handle);
 extern void gopine_bond_init(void);
 extern bool gopine_bond_prepare(uint8_t battery);
 extern void gopine_bond_poll(bool stopped);
 extern int gopine_bond_status(void);
 extern bool gopine_bond_exists(void);
+extern bool gopine_bond_peer_saved(uint16_t conn);
+extern bool gopine_bond_can_pair(uint16_t conn);
 extern uint32_t gopine_bond_delay(void);
 extern bool gopine_bond_forget(void);
 extern int gopine_ble_restore_privacy(void);
 static uint8_t update_status[16];
+static uint16_t update_handle;
+static struct update_links update_links;
+
+static void update_notify(void) {
+    if(!window || !update_window)return;
+    for(unsigned i=0;i<UPDATE_LINK_COUNT;i++) {
+        struct update_link *link=&update_links.entries[i];
+        if(link->handle==BLE_HS_CONN_HANDLE_NONE || !link->subscribed || !link->dirty ||
+           link->terminating || link->close_requested)continue;
+        if(update_links.owner!=BLE_HS_CONN_HANDLE_NONE && update_links.owner!=link->handle) {
+            link->dirty=false;continue;
+        }
+        // A snapshot acknowledges only bytes the Go receiver has read back.
+        // MTU is a property of this recipient, not of the most recent peer.
+        uint8_t status[16];memcpy(status,update_status,sizeof(status));
+        status[3]=(uint8_t)(ble_att_mtu(link->handle)-3);
+        struct os_mbuf *om=ble_hs_mbuf_from_flat(status,sizeof(status));
+        if(om && !ble_gattc_notify_custom(link->handle,update_handle,om))link->dirty=false;
+    }
+}
+
 static struct ble_hs_stop_listener stop_listener;
 
 static bool expired(void) {
     return !unbounded && (int32_t)(ble_npl_time_get()-expires_at)>=0;
+}
+static void battery_snapshot_notify(void) {
+    if(!window || !phone_window || expired())return;
+    // Classic InfiniLink publishes Battery changes, but not its firmware
+    // field. Send the current sample once after the firmware read response
+    // has been queued by the host pump, so the companion can redraw Home.
+    for(unsigned i=0;i<2;i++) {
+        struct phone_peer *peer=&phone_peers[i];
+        if(peer->handle==BLE_HS_CONN_HANDLE_NONE || !peer->battery_snapshot_pending ||
+           !peer->battery_subscribed || peer->close_requested)continue;
+        struct os_mbuf *om=ble_hs_mbuf_from_flat(&battery_level,1);
+        if(om && !ble_gattc_notify_custom(peer->handle,battery_handle,om)) {
+            peer->battery_snapshot_pending=false;
+            peer->battery_snapshot_sent=true;
+        }
+    }
 }
 static void stopped(int status, void *arg) {
     (void)arg;
@@ -100,12 +231,13 @@ static int time_access(uint16_t conn, uint16_t attr,
     if (!window || update_window || expired())
         return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     if (phone_window) {
-        if (conn != connection) return BLE_ATT_ERR_UNLIKELY;
+        struct phone_peer *peer=phone_peer_find(conn);
+        if(!peer)return BLE_ATT_ERR_UNLIKELY;
         uint8_t value[10];
         unsigned len = OS_MBUF_PKTLEN(ctx->om);
         if (len < 9 || len > sizeof(value)) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
         if (os_mbuf_copydata(ctx->om, 0, len, value)) return BLE_ATT_ERR_UNLIKELY;
-        return phone_time_receive(&phone_time_incoming, conn, peer_generation,
+        return phone_time_receive(&peer->time,conn,peer->generation,
                                   value, len, ble_npl_time_get());
     }
     if (pending) return BLE_ATT_ERR_INSUFFICIENT_RES;
@@ -123,8 +255,8 @@ static int time_access(uint16_t conn, uint16_t attr,
 
 static int battery_access(uint16_t conn, uint16_t attr,
                           struct ble_gatt_access_ctxt *ctx, void *arg) {
-    (void)attr; (void)arg;
-    return battery_read_access(conn,ctx,window,update_window,battery_level);
+    (void)conn; (void)attr; (void)arg;
+    return battery_read_access(ctx,battery_level);
 }
 
 void gopine_ble_update_battery(uint8_t value) {
@@ -133,7 +265,7 @@ void gopine_ble_update_battery(uint8_t value) {
     battery_level=value;
     // Uses the last UI sample, never an additional ADC read or sleep poll.
     // NimBLE coalesces updates and only notifies subscribed peers.
-    if(window && connection!=BLE_HS_CONN_HANDLE_NONE)
+    if(window)
         ble_gatts_chr_updated(battery_handle);
 }
 
@@ -141,7 +273,11 @@ static int weather_access(uint16_t conn, uint16_t attr,
                           struct ble_gatt_access_ctxt *ctx, void *arg) {
     (void)attr; (void)arg;
     if (ctx->op != BLE_GATT_ACCESS_OP_WRITE_CHR || !window || !(weather_window || phone_window) || expired()) return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
+    struct weather_mailbox *mailbox=&weather_incoming;
     if (phone_window) {
+        struct phone_peer *peer=phone_peer_find(conn);
+        if(!peer)return BLE_ATT_ERR_UNLIKELY;
+        mailbox=&peer->weather;
         int rc = phone_link_permission(conn);
         if (rc) return rc;
     }
@@ -149,7 +285,7 @@ static int weather_access(uint16_t conn, uint16_t attr,
     uint8_t data[53];
     if (len > sizeof(data)) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     if (os_mbuf_copydata(ctx->om, 0, len, data)) return BLE_ATT_ERR_UNLIKELY;
-    if (!weather_store(&weather_incoming, data, len)) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    if (!weather_store(mailbox,data,len)) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     disconnect_after = ble_npl_time_get() + 200; // Preserve the last ATT ACK.
     return 0;
 }
@@ -170,18 +306,32 @@ static int music_access(uint16_t conn, uint16_t attr,
                         struct ble_gatt_access_ctxt *ctx, void *arg) {
     (void)attr;
     unsigned id=(uintptr_t)arg, len;
-    uint8_t *field=music_field(&music_incoming,id,&len);
+    struct phone_peer *peer=phone_peer_find(conn);
+    if(!peer) {
+        // OTA still exposes the same public characteristic schema, but it has
+        // no phone metadata. Avoid allocating a spare full mailbox for zeros.
+        static const uint8_t zero[4]={0};
+        if(ctx->op!=BLE_GATT_ACCESS_OP_READ_CHR)return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
+        if(id<2 || id>12)return BLE_ATT_ERR_UNLIKELY;
+        unsigned size=(id>=3 && id<=5)?0:((id>=6 && id<=10)?4:1);
+        return os_mbuf_append(ctx->om,zero,size)?BLE_ATT_ERR_INSUFFICIENT_RES:0;
+    }
+    uint8_t *field=music_field(&peer->music,id,&len);
     if(!field) return BLE_ATT_ERR_UNLIKELY;
     if(ctx->op==BLE_GATT_ACCESS_OP_READ_CHR)
         return os_mbuf_append(ctx->om,field,len)?BLE_ATT_ERR_INSUFFICIENT_RES:0;
-    if(ctx->op!=BLE_GATT_ACCESS_OP_WRITE_CHR || !window || !phone_window || expired())
+    if(ctx->op!=BLE_GATT_ACCESS_OP_WRITE_CHR || !window || !phone_window || expired() || !peer)
         return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     int rc = phone_link_permission(conn);
     if(rc) return rc;
     unsigned size=OS_MBUF_PKTLEN(ctx->om);
     uint8_t data[40];
     if(os_mbuf_copydata(ctx->om,0,size>40?40:size,data)) return BLE_ATT_ERR_UNLIKELY;
-    if(!music_store(&music_incoming,id,data,size)) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    if(!music_store(&peer->music,id,data,size)) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    if(id<=4) {
+        if(connection!=conn || peer->music.dirty)music_snapshot_dirty=true;
+        connection=conn;
+    }
     disconnect_after=ble_npl_time_get()+200;
     return 0;
 }
@@ -194,13 +344,15 @@ static int notification_access(uint16_t conn, uint16_t attr,
         return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     int rc = phone_link_permission(conn);
     if(rc) return rc;
+    struct phone_peer *peer=phone_peer_find(conn);
+    if(!peer)return BLE_ATT_ERR_UNLIKELY;
     unsigned size=OS_MBUF_PKTLEN(ctx->om);
     if(size<4) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     uint8_t data[NOTIFICATION_PACKET_SIZE];
     unsigned used=size>sizeof(data)?sizeof(data):size;
     if(os_mbuf_copydata(ctx->om,0,used,data)) return BLE_ATT_ERR_UNLIKELY;
     if(size>used) memcpy(data+used-3,"...",3);
-    if(!notification_store(&notification_incoming,data,used)) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    if(!notification_store(&peer->notification,data,used)) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     disconnect_after=ble_npl_time_get()+200;
     return 0;
 }
@@ -213,28 +365,83 @@ static const ble_uuid128_t update_uuids[]={
     BLE_UUID128_INIT(0xd0,0x42,0x19,0x3a,0x3b,0x43,0x23,0x8e,0xfe,0x48,0xfc,0x78,3,0,6,0)
 };
 static int update_access(uint16_t conn,uint16_t attr,struct ble_gatt_access_ctxt *ctx,void *arg) {
-    (void)conn;(void)attr;
-    if(ctx->op==BLE_GATT_ACCESS_OP_READ_CHR && (uintptr_t)arg==3) {
-        update_status[3]=connection==BLE_HS_CONN_HANDLE_NONE?0:(uint8_t)(ble_att_mtu(connection)-3);
-        return os_mbuf_append(ctx->om,update_status,16)?BLE_ATT_ERR_INSUFFICIENT_RES:0;
+    (void)attr;
+    if(ctx->op==BLE_GATT_ACCESS_OP_READ_CHR && (uintptr_t)arg==1) {
+        // Revision, outstanding packet window, DATA Write Command support,
+        // reserved. STATUS remains the protocol-2 durable acknowledgement.
+        const uint8_t capabilities[]={1,UPDATE_PACKET_WINDOW,1,0};
+        return os_mbuf_append(ctx->om,capabilities,sizeof(capabilities))?BLE_ATT_ERR_INSUFFICIENT_RES:0;
     }
-    if(ctx->op!=BLE_GATT_ACCESS_OP_WRITE_CHR || !window || !update_window || expired()) return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
+    if(ctx->op==BLE_GATT_ACCESS_OP_READ_CHR && (uintptr_t)arg==3) {
+        uint8_t status[16];memcpy(status,update_status,sizeof(status));
+        status[3]=conn==BLE_HS_CONN_HANDLE_NONE?0:(uint8_t)(ble_att_mtu(conn)-3);
+        return os_mbuf_append(ctx->om,status,sizeof(status))?BLE_ATT_ERR_INSUFFICIENT_RES:0;
+    }
+    struct update_link *link=update_links_find(&update_links,conn);
+    if(ctx->op!=BLE_GATT_ACCESS_OP_WRITE_CHR || !window || !update_window || expired() ||
+       !link || !link->subscribed || link->terminating || link->close_requested ||
+       (update_links.owner!=BLE_HS_CONN_HANDLE_NONE && update_links.owner!=conn))
+        return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     unsigned n=OS_MBUF_PKTLEN(ctx->om);
-    uint8_t data[200];
+    uint8_t data[244];
     if(n>sizeof(data)) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     if(os_mbuf_copydata(ctx->om,0,n,data))return BLE_ATT_ERR_UNLIKELY;
-    int rc=update_store(&update_incoming,(uintptr_t)arg,data,n);
+    if(update_links.owner==BLE_HS_CONN_HANDLE_NONE &&
+       !update_claimable(update_status,(uintptr_t)arg,data,n))return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
+    int rc=update_store(&update_incoming,update_status,(uintptr_t)arg,data,n);
+    if(rc==-2)return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     if(rc<0)return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     if(!rc)return BLE_ATT_ERR_INSUFFICIENT_RES;
+    if(update_links.owner==BLE_HS_CONN_HANDLE_NONE) {
+        update_links.owner=conn;
+        update_links.advertising_pending=true;
+    }
     return 0;
 }
 
+void gopine_ble_set_firmware_version(const uint8_t *version,unsigned size) {
+    // The Go bridge supplies its authoritative version before radio startup.
+    // Keep a connection's public metadata stable throughout its lifetime.
+    if(!host_up && !stopping)device_info_set_version(&device_information,version,size);
+}
+static int device_info_access(uint16_t conn,uint16_t attr,
+                              struct ble_gatt_access_ctxt *ctx,void *arg) {
+    (void)attr;
+    uint16_t uuid=(uint16_t)(uintptr_t)arg;
+    // The pinned ATT host prepares this one-byte response before invoking a
+    // normal Read Request. Exclude local reads and Read Blob callbacks, whose
+    // offset validation happens only after this callback returns.
+    uint8_t opcode=0;
+    bool normal_read=ctx->op==BLE_GATT_ACCESS_OP_READ_CHR &&
+        OS_MBUF_PKTLEN(ctx->om)==1 && !os_mbuf_copydata(ctx->om,0,1,&opcode) &&
+        opcode==BLE_ATT_OP_READ_RSP;
+    int rc=device_info_read(&device_information,ctx,uuid);
+    struct phone_peer *peer=phone_peer_find(conn);
+    if(!rc && uuid==0x2a26 && device_information.firmware_length && normal_read &&
+       window && phone_window && !expired() && peer &&
+       peer->battery_subscribed && !peer->battery_snapshot_sent)
+        peer->battery_snapshot_pending=true;
+    return rc;
+}
+
+static const ble_uuid128_t pairing_trace_service=BLE_UUID128_INIT(0xd0,0x42,0x19,0x3a,0x3b,0x43,0x23,0x8e,0xfe,0x48,0xfc,0x78,0,0,7,0);
+static const ble_uuid128_t pairing_trace_characteristic=BLE_UUID128_INIT(0xd0,0x42,0x19,0x3a,0x3b,0x43,0x23,0x8e,0xfe,0x48,0xfc,0x78,1,0,7,0);
+static int pairing_trace_access(uint16_t conn,uint16_t attr,struct ble_gatt_access_ctxt *ctx,void *arg) {
+    (void)conn;(void)attr;(void)arg;
+    if(ctx->op!=BLE_GATT_ACCESS_OP_READ_CHR)return BLE_ATT_ERR_READ_NOT_PERMITTED;
+    // No PIN, key, nonce, address or other phone data is exposed here.
+    pairing_trace[3]=(uint8_t)trace_bond_flags(BLE_ADDR_ANY);
+    return os_mbuf_append(ctx->om,pairing_trace,4+trace_count*8)?BLE_ATT_ERR_INSUFFICIENT_RES:0;
+}
 static const struct ble_gatt_svc_def services[] = {
+    {.type=BLE_GATT_SVC_TYPE_PRIMARY,.uuid=&pairing_trace_service.u,
+     .characteristics=(struct ble_gatt_chr_def[]){
+         {.uuid=&pairing_trace_characteristic.u,.access_cb=pairing_trace_access,.flags=BLE_GATT_CHR_F_READ},{0}}},
     {.type=BLE_GATT_SVC_TYPE_PRIMARY,.uuid=&update_uuids[0].u,
      .characteristics=(struct ble_gatt_chr_def[]){
-         {.uuid=&update_uuids[1].u,.access_cb=update_access,.arg=(void*)1,.flags=BLE_GATT_CHR_F_WRITE},
-         {.uuid=&update_uuids[2].u,.access_cb=update_access,.arg=(void*)2,.flags=BLE_GATT_CHR_F_WRITE},
-         {.uuid=&update_uuids[3].u,.access_cb=update_access,.arg=(void*)3,.flags=BLE_GATT_CHR_F_READ}, {0}}},
+         {.uuid=&update_uuids[1].u,.access_cb=update_access,.arg=(void*)1,.flags=BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE},
+         {.uuid=&update_uuids[2].u,.access_cb=update_access,.arg=(void*)2,.flags=BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP},
+         {.uuid=&update_uuids[3].u,.access_cb=update_access,.arg=(void*)3,.flags=BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,.val_handle=&update_handle}, {0}}},
     {.type=BLE_GATT_SVC_TYPE_PRIMARY, .uuid=BLE_UUID16_DECLARE(0x1811),
      .characteristics=(struct ble_gatt_chr_def[]) {
          {.uuid=BLE_UUID16_DECLARE(0x2a46), .access_cb=notification_access,
@@ -262,89 +469,189 @@ static const struct ble_gatt_svc_def services[] = {
          MUSIC_CHAR(2), MUSIC_CHAR(3), MUSIC_CHAR(4), MUSIC_CHAR(5),
          MUSIC_CHAR(6), MUSIC_CHAR(7), MUSIC_CHAR(8), MUSIC_CHAR(9),
          MUSIC_CHAR(10), MUSIC_CHAR(11), MUSIC_CHAR(12), {0}}},
+    // Append new services so existing bonded clients retain their old handles.
+    {.type=BLE_GATT_SVC_TYPE_PRIMARY,.uuid=BLE_UUID16_DECLARE(0x180a),
+     .characteristics=(struct ble_gatt_chr_def[]){
+         {.uuid=BLE_UUID16_DECLARE(0x2a24),.access_cb=device_info_access,.arg=(void*)0x2a24,.flags=BLE_GATT_CHR_F_READ},
+         {.uuid=BLE_UUID16_DECLARE(0x2a26),.access_cb=device_info_access,.arg=(void*)0x2a26,.flags=BLE_GATT_CHR_F_READ},
+         {.uuid=BLE_UUID16_DECLARE(0x2a29),.access_cb=device_info_access,.arg=(void*)0x2a29,.flags=BLE_GATT_CHR_F_READ},{0}}},
     {0}
 };
 
 static void advertise(void);
+static int update_gap_event(struct ble_gap_event *event) {
+    struct update_link *link;
+    switch(event->type) {
+    case BLE_GAP_EVENT_CONNECT:
+        if(!event->connect.status) {
+            if(update_links_find(&update_links,event->connect.conn_handle))break;
+            if(!update_links_add(&update_links,event->connect.conn_handle,ble_npl_time_get()))
+                failure=BLE_HS_ENOMEM;
+        } else update_links.advertising_pending=true;
+        lifecycle_changed=true;
+        break;
+    case BLE_GAP_EVENT_DISCONNECT:
+        link=update_links_find(&update_links,event->disconnect.conn.conn_handle);
+        if(!link)break;
+        if(update_links.owner==link->handle) {
+            update_links.owner=BLE_HS_CONN_HANDLE_NONE;
+            // A queued but unconsumed packet was not acknowledged by Go.
+            // The receiver and durable offset remain available to a resume.
+            memset(&update_incoming,0,sizeof(update_incoming));
+            for(unsigned i=0;i<UPDATE_LINK_COUNT;i++)
+                update_links.entries[i].dirty=update_links.entries[i].subscribed;
+        }
+        memset(link,0,sizeof(*link));link->handle=BLE_HS_CONN_HANDLE_NONE;
+        update_links.advertising_pending=true;lifecycle_changed=true;
+        break;
+    case BLE_GAP_EVENT_SUBSCRIBE:
+        link=update_links_find(&update_links,event->subscribe.conn_handle);
+        if(link && event->subscribe.attr_handle==update_handle) {
+            link->subscribed=event->subscribe.cur_notify;
+            link->dirty=link->subscribed;
+        }
+        break;
+    case BLE_GAP_EVENT_PASSKEY_ACTION:
+        // Updating never pairs a new peer or replaces an existing phone key.
+        // Defer termination until the SMP callback has unwound.
+        link=update_links_find(&update_links,event->passkey.conn_handle);
+        if(link){link->close_requested=true;link->deadline=ble_npl_time_get();}
+        break;
+    case BLE_GAP_EVENT_REPEAT_PAIRING:
+        return BLE_GAP_REPEAT_PAIRING_IGNORE;
+    case BLE_GAP_EVENT_TERM_FAILURE:
+        link=update_links_find(&update_links,event->term_failure.conn_handle);
+        if(link) {
+            link->terminating=false;
+            link->close_requested=true;
+            link->deadline=ble_npl_time_get()+100;
+        }
+        break;
+    case BLE_GAP_EVENT_ADV_COMPLETE:
+        update_links.advertising_pending=true;
+        break;
+    default: break; // Encryption or cached phone CCCDs cannot alter OTA ownership.
+    }
+    return 0;
+}
 static int gap_event(struct ble_gap_event *event, void *arg) {
     (void)arg;
-    switch (event->type) {
-    case BLE_GAP_EVENT_PASSKEY_ACTION: {
+    if(update_window)return update_gap_event(event);
+    struct phone_peer *peer;
+    switch(event->type) {
+    case BLE_GAP_EVENT_PASSKEY_ACTION:
+        peer=phone_peer_find(event->passkey.conn_handle);
+        if(!peer)break;
+        trace_pairing(4,event->passkey.params.action);
         if(event->passkey.params.action!=BLE_SM_IOACT_DISP || !window ||
-           update_window || gopine_bond_exists()) {
-            ble_gap_terminate(event->passkey.conn_handle,BLE_ERR_REM_USER_CONN_TERM);
-            break;
+           !gopine_bond_can_pair(peer->handle) ||
+           (pairing_connection!=BLE_HS_CONN_HANDLE_NONE && pairing_connection!=peer->handle)) {
+            phone_peer_close(peer);break;
         }
-        // Unwind the security state machine before injecting application IO.
-        // This avoids nesting a second SM execution under its own callback.
-        pairing_connection=event->passkey.conn_handle; pairing_io_pending=true;
+        // Only one SMP procedure can own the on-watch PIN prompt at a time.
+        pairing_connection=peer->handle;pairing_io_pending=true;
         break;
-    }
     case BLE_GAP_EVENT_ENC_CHANGE:
-        last_security_status=event->enc_change.status;
-        if(!event->enc_change.status)last_disconnect_reason=0;
-        if(!event->enc_change.status && phone_link_ready(connection))
-            pairing_progress=6u<<8;
-        pairing_code=0;pairing_io_pending=security_pending=false;lifecycle_changed=true;
-        // The central may subscribe before pairing finishes. Publish the
-        // ready state only after authentication, even if CCCD never changes.
-        music_incoming.dirty=true;
-        if(event->enc_change.status || !phone_link_ready(connection)) {
-            gopine_ancs_reset();
-            phone_time_clear(&phone_time_incoming);
-            if(phone_window) {
-                music_clear(&music_incoming);
-                memset(&weather_incoming,0,sizeof(weather_incoming));
-                memset(&notification_incoming,0,sizeof(notification_incoming));
+        peer=phone_peer_find(event->enc_change.conn_handle);
+        if(!peer)break;
+        if(phone_window) {
+            last_security_status=event->enc_change.status;
+            if(!event->enc_change.status && phone_link_ready(peer->handle)) {
+                last_disconnect_reason=0;
+                if(pairing_connection==peer->handle || pairing_connection==BLE_HS_CONN_HANDLE_NONE)
+                    pairing_progress=6u<<8;
             }
+            trace_pairing(6,event->enc_change.status);
+            struct ble_gap_conn_desc desc;
+            if(!ble_gap_conn_find(peer->handle,&desc))
+                trace_pairing(13,(desc.sec_state.key_size<<8) |
+                    (desc.sec_state.encrypted?1:0) | (desc.sec_state.authenticated?2:0) |
+                    (desc.sec_state.bonded?4:0));
+        }
+        if(pairing_connection==peer->handle) {
+            pairing_code=0;pairing_io_pending=false;pairing_connection=BLE_HS_CONN_HANDLE_NONE;
+        }
+        peer->security_pending=false;lifecycle_changed=true;
+        peer->music.dirty=true;
+        if(connection==peer->handle)music_snapshot_dirty=true;
+        if(event->enc_change.status || !phone_link_ready(peer->handle)) {
+            gopine_ancs_reset_peer(peer->handle);
+            phone_time_clear(&peer->time);
+            music_clear(&peer->music);
+            memset(&peer->weather,0,sizeof(peer->weather));
+            memset(&peer->notification,0,sizeof(peer->notification));
         }
         break;
     case BLE_GAP_EVENT_REPEAT_PAIRING:
-        // Replacing a saved phone requires the on-watch Forget Phone action.
+        // A new phone uses the second slot; an existing identity is never
+        // silently replaced by another pairing request.
+        trace_pairing(11,BLE_HS_EALREADY);
         return BLE_GAP_REPEAT_PAIRING_IGNORE;
     case BLE_GAP_EVENT_CONNECT:
-        if (!event->connect.status) {
-            pairing_code=0;pairing_io_pending=false;
-            security_pending=phone_window;
-            gopine_ancs_reset();
-            connection = event->connect.conn_handle;
-            peer_generation++;
-            phone_time_clear(&phone_time_incoming);
-            if(phone_window) memset(&weather_incoming,0,sizeof(weather_incoming));
-            music_subscribed=false;
-            music_clear(&music_incoming);
-            memset(&notification_incoming,0,sizeof(notification_incoming));
+        if(phone_window)trace_pairing(2,event->connect.status);
+        if(!event->connect.status) {
+            if(!window || phone_peer_find(event->connect.conn_handle))break;
+            peer=phone_peer_add(event->connect.conn_handle);
+            if(!peer){failure=BLE_HS_ENOMEM;break;}
+            peer->security_pending=phone_window && gopine_bond_peer_saved(peer->handle);
+            peer->security_retry_at=ble_npl_time_get();
+            if(phone_window) {
+                struct ble_gap_conn_desc desc;
+                if(!ble_gap_conn_find(peer->handle,&desc))
+                    trace_pairing(15,trace_bond_flags(&desc.peer_id_addr));
+            }
+            lifecycle_changed=true;
+        } else if(phone_window) {
+            last_security_status=event->connect.status;lifecycle_changed=true;
         }
-        else advertise();
+        phone_advertising_pending=true;
         break;
-    case BLE_GAP_EVENT_DISCONNECT:
-        // Retain the actual reason across automatic advertising/reconnects;
-        // otherwise the UI hides every failed attempt as "Waiting for phone".
-        if(phone_window)last_disconnect_reason=event->disconnect.reason;
-        pairing_code=0;pairing_io_pending=security_pending=false;lifecycle_changed=true;
-        gopine_ancs_reset();
-        connection = BLE_HS_CONN_HANDLE_NONE;
-        peer_generation++;
-        phone_time_clear(&phone_time_incoming);
-        if(phone_window) memset(&weather_incoming,0,sizeof(weather_incoming));
-        music_subscribed=false;
-        music_clear(&music_incoming);
-        memset(&update_incoming,0,sizeof(update_incoming));
-        memset(&notification_incoming,0,sizeof(notification_incoming));
-        if(phone_window) slow_advertising=true;
-        advertise();
+    case BLE_GAP_EVENT_DISCONNECT: {
+        peer=phone_peer_find(event->disconnect.conn.conn_handle);
+        if(!peer)break;
+        if(phone_window){last_disconnect_reason=event->disconnect.reason;trace_pairing(7,event->disconnect.reason);}
+        if(pairing_connection==peer->handle) {
+            pairing_code=0;pairing_io_pending=false;pairing_connection=BLE_HS_CONN_HANDLE_NONE;
+        }
+        gopine_ancs_reset_peer(peer->handle);
+        bool selected=connection==peer->handle;
+        memset(peer,0,sizeof(*peer));peer->handle=BLE_HS_CONN_HANDLE_NONE;
+        if(selected) {
+            connection=BLE_HS_CONN_HANDLE_NONE;
+            for(unsigned i=0;i<2;i++)if(phone_peers[i].handle!=BLE_HS_CONN_HANDLE_NONE) {
+                connection=phone_peers[i].handle;break;
+            }
+            music_snapshot_dirty=true;
+        }
+        lifecycle_changed=true;phone_advertising_pending=true;
+        if(phone_window)slow_advertising=(int32_t)(ble_npl_time_get()-fast_until)>=0;
         break;
+    }
     case BLE_GAP_EVENT_ADV_COMPLETE:
-        if(phone_window && window) { slow_advertising=true; advertise(); }
+        if(phone_window && window){slow_advertising=true;phone_advertising_pending=true;}
+        break;
+    case BLE_GAP_EVENT_TERM_FAILURE:
+        peer=phone_peer_find(event->term_failure.conn_handle);
+        if(peer && peer->close_requested) {
+            peer->terminating=false;peer->close_retry_at=ble_npl_time_get()+100;
+        }
         break;
     case BLE_GAP_EVENT_SUBSCRIBE:
+        peer=phone_peer_find(event->subscribe.conn_handle);
+        if(!peer)break;
+        if(event->subscribe.attr_handle==battery_handle) {
+            peer->battery_subscribed=event->subscribe.cur_notify;
+            if(!peer->battery_subscribed)peer->battery_snapshot_pending=false;
+        }
         if(event->subscribe.attr_handle==music_handle) {
-            music_subscribed=event->subscribe.cur_notify;
-            music_incoming.dirty=true;
+            peer->music_subscribed=event->subscribe.cur_notify;
+            peer->music.dirty=true;
+            if(connection==peer->handle)music_snapshot_dirty=true;
         }
         break;
     case BLE_GAP_EVENT_NOTIFY_RX:
-        if(window && phone_window && !expired() && phone_link_ready(event->notify_rx.conn_handle))
+        if(window && phone_window && !expired() && phone_peer_find(event->notify_rx.conn_handle) &&
+           phone_link_ready(event->notify_rx.conn_handle))
             gopine_ancs_notify(event->notify_rx.conn_handle,event->notify_rx.attr_handle,event->notify_rx.om);
         break;
     }
@@ -352,7 +659,13 @@ static int gap_event(struct ble_gap_event *event, void *arg) {
 }
 
 static void advertise(void) {
-    if (!window || pending || !synced || connection != BLE_HS_CONN_HANDLE_NONE) return;
+    if (!window || pending || !synced) return;
+    if(update_window) {
+        if(!update_links_available(&update_links))return;
+    } else if(phone_window) {
+        if(gopine_ble_peer_count()==2)return;
+    } else if(connection!=BLE_HS_CONN_HANDLE_NONE)return;
+    if(ble_gap_adv_active())return;
     if(expired()) return;
     int32_t remaining = unbounded ? BLE_HS_FOREVER : (int32_t)(expires_at - ble_npl_time_get());
     if(phone_window && !slow_advertising) {
@@ -383,9 +696,45 @@ static void advertise(void) {
     struct ble_gap_adv_params params = {0};
     params.conn_mode = BLE_GAP_CONN_MODE_UND;
     params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    params.itvl_min = slow_advertising ? 1600 : 160;
-    params.itvl_max = slow_advertising ? 2400 : 240;
+    params.itvl_min = slow_advertising ? 1600 : (phone_window?32:160);
+    params.itvl_max = slow_advertising ? 2400 : (phone_window?48:240);
     failure = ble_gap_adv_start(address_type, NULL, remaining, &params, gap_event, NULL);
+    if(failure && phone_window){last_security_status=failure;trace_pairing(10,failure);lifecycle_changed=true;}
+}
+
+static void update_links_poll(void) {
+    if(!window || !update_window || expired())return;
+    uint32_t now=ble_npl_time_get();
+    for(unsigned i=0;i<UPDATE_LINK_COUNT;i++) {
+        struct update_link *link=&update_links.entries[i];
+        if(link->handle==BLE_HS_CONN_HANDLE_NONE || link->terminating)continue;
+        if(!link->close_requested && link->handle==update_links.owner)update_tune(link);
+        // The maintained sender reconnects during verification by subscribing
+        // and waiting (up to 45s), without issuing another VERIFY command.
+        // Allow that wait once per connection without granting write ownership.
+        if(!link->close_requested && link->handle!=update_links.owner && link->subscribed &&
+           update_status[1]==3 && !link->verification_wait) {
+            link->verification_wait=true;link->deadline=now+UPDATE_VERIFY_GRACE_MS;
+        }
+        if((!link->close_requested && link->handle==update_links.owner) ||
+           (int32_t)(now-link->deadline)<0)continue;
+        // Retain this slot until GAP confirms disconnect. Controller command
+        // acceptance alone does not make a second connection slot available.
+        link->terminating=true;
+        int rc=ble_gap_terminate(link->handle,BLE_ERR_REM_USER_CONN_TERM);
+        if(rc && rc!=BLE_HS_ENOTCONN) {
+            link->terminating=false;link->close_requested=true;
+            link->deadline=now+100;
+        }
+    }
+    if(update_links.advertising_pending) {
+        update_links.advertising_pending=false;
+        if(update_links_available(&update_links))advertise();
+        else if(ble_gap_adv_active()) {
+            int rc=ble_gap_adv_stop();
+            if(rc && rc!=BLE_HS_EALREADY)failure=rc;
+        }
+    }
 }
 
 static void on_sync(void) {
@@ -401,11 +750,14 @@ static void on_sync(void) {
     if(!failure)failure=gopine_ble_restore_privacy();
     synced = failure == 0;
     if(failure && phone_window) {
-        last_security_status=failure;lifecycle_changed=true;
+        last_security_status=failure;trace_pairing(18,(uint16_t)failure);lifecycle_changed=true;
     }
     if(synced)advertise();
 }
-static void on_reset(int reason) { synced = false; failure = reason ? reason : -1; }
+static void on_reset(int reason) {
+    synced=false;failure=reason?reason:-1;
+    if(phone_window){last_security_status=(uint16_t)failure;trace_pairing(9,(uint16_t)failure);lifecycle_changed=true;}
+}
 
 static int start_window(const uint8_t *value, uint8_t battery, uint32_t window_ms, bool weather, bool phone) {
     // Signed deadline arithmetic requires a positive window below 2^31 ms.
@@ -442,15 +794,14 @@ static int start_window(const uint8_t *value, uint8_t battery, uint32_t window_m
     memcpy(current, value, 10);
     battery_level = battery > 100 ? 100 : battery;
     pending = false; window = true; failure = 0; disconnect_after = 0;
-    phone_time_clear(&phone_time_incoming);
     weather_window = weather; phone_window=phone;
     unbounded=phone && !window_ms; slow_advertising=false;
-    music_subscribed=false;
-    music_clear(&music_incoming);
+    phone_peers_reset();
+    update_links_reset(&update_links);
     memset(&weather_incoming, 0, sizeof(weather_incoming));
-    memset(&notification_incoming,0,sizeof(notification_incoming));
     expires_at = ble_npl_time_get() + window_ms;
     fast_until = ble_npl_time_get() + 30000;
+    if(phone){trace_pairing(1,0);trace_pairing(14,trace_bond_flags(BLE_ADDR_ANY));}
     if (!host_up) { host_up = true; ble_hs_sched_start(); }
     else advertise();
     return failure;
@@ -464,25 +815,33 @@ int gopine_ble_start_weather(const uint8_t *value, uint8_t battery, uint32_t win
 }
 int gopine_ble_take_weather(uint8_t *value) {
     if (!window || !(weather_window || phone_window)) return 0;
-    if (phone_window && phone_link_permission(connection)) {
-        memset(&weather_incoming,0,sizeof(weather_incoming));
+    if(phone_window) {
+        for(unsigned i=0;i<2;i++) {
+            unsigned at=(weather_cursor+i)%2;
+            struct phone_peer *peer=&phone_peers[at];
+            if(peer->handle==BLE_HS_CONN_HANDLE_NONE)continue;
+            if(phone_link_permission(peer->handle)) {
+                memset(&peer->weather,0,sizeof(peer->weather));continue;
+            }
+            if(!phone_link_ready(peer->handle))continue;
+            int size=weather_take(&peer->weather,value);
+            if(size){weather_cursor=(at+1)%2;return size;}
+        }
         return 0;
     }
-    if (phone_window && !phone_link_ready(connection)) return 0;
     return weather_take(&weather_incoming, value);
 }
 
 void gopine_ble_stop(void) {
-    pairing_code=0;pairing_io_pending=security_pending=false;
+    if(phone_window && window)trace_pairing(12,0);
+    pairing_code=0;pairing_io_pending=false;pairing_connection=BLE_HS_CONN_HANDLE_NONE;
     gopine_ancs_reset();
     window = false; pending = false; weather_window = phone_window = false;
-    phone_time_clear(&phone_time_incoming);
-    music_subscribed=false;
+    phone_peers_reset();
+    update_links_reset(&update_links);
     update_window=false;
     memset(&update_incoming,0,sizeof(update_incoming));
-    music_clear(&music_incoming);
     memset(&weather_incoming, 0, sizeof(weather_incoming));
-    memset(&notification_incoming,0,sizeof(notification_incoming));
     if (!initialized || !host_up || stopping) return;
     // Allow the ATT Write Response to leave the controller before teardown.
     // The window is already closed: no new write or reconnection is accepted.
@@ -502,35 +861,75 @@ void gopine_ble_stop(void) {
 void gopine_ble_poll(void) {
     if (!initialized || (!host_up && !stopping)) return;
     gopine_ble_pump();
-    if(window && phone_window && connection!=BLE_HS_CONN_HANDLE_NONE && security_pending) {
-        security_pending=false;
-        int rc=ble_gap_security_initiate(connection);
-        if(rc && rc!=BLE_HS_EALREADY) ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM);
+    uint32_t now=ble_npl_time_get();
+    for(unsigned i=0;i<2;i++) {
+        struct phone_peer *peer=&phone_peers[i];
+        if(peer->handle==BLE_HS_CONN_HANDLE_NONE)continue;
+        if(peer->close_requested) {
+            if(peer->terminating || (int32_t)(now-peer->close_retry_at)<0)continue;
+            peer->terminating=true;
+            int rc=ble_gap_terminate(peer->handle,BLE_ERR_REM_USER_CONN_TERM);
+            if(rc && rc!=BLE_HS_ENOTCONN) {
+                peer->terminating=false;peer->close_retry_at=now+100;
+            }
+            continue;
+        }
+        if(window && phone_window && peer->security_pending &&
+           (int32_t)(now-peer->security_retry_at)>=0) {
+            int rc=ble_gap_security_initiate(peer->handle);
+            // SMP resources remain bounded even with overlapping saved-key
+            // restores. Retry resource pressure without dropping either peer.
+            if(rc==BLE_HS_ENOMEM || rc==BLE_HS_EBUSY) {
+                peer->security_retry_at=now+1000;
+            } else {
+                peer->security_pending=false;trace_pairing(3,rc);
+                if(rc && rc!=BLE_HS_EALREADY) {
+                    last_security_status=rc;lifecycle_changed=true;
+                    phone_peer_close(peer);
+                }
+            }
+        }
     }
     if(pairing_io_pending) {
         pairing_io_pending=false;
-        if(window && !update_window && pairing_connection==connection && !gopine_bond_exists()) {
+        struct phone_peer *peer=phone_peer_find(pairing_connection);
+        if(window && !update_window && peer && !peer->close_requested &&
+           gopine_bond_can_pair(peer->handle)) {
             uint32_t random;
             // Use hardware entropy, never the scheduling-jitter LCG.
             do {ble_ll_rand_data_get((uint8_t*)&random,sizeof(random));} while(random>=4294000000u);
             struct ble_sm_io io={.action=BLE_SM_IOACT_DISP,.passkey=random%1000000u};
             pairing_code=io.passkey+1;lifecycle_changed=true;
-            if(ble_sm_inject_io(connection,&io)) {
-                pairing_code=0;
-                ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM);
+            int rc=ble_sm_inject_io(peer->handle,&io);
+            trace_pairing(5,rc);
+            if(rc) {
+                last_security_status=rc;lifecycle_changed=true;pairing_code=0;
+                phone_peer_close(peer);
             }
         }
     }
-    if(window && phone_window && connection!=BLE_HS_CONN_HANDLE_NONE) {
-        uint16_t progress=gopine_sm_progress(connection);
-        // Retain the final observed phase after timeout/disconnect so INFO
-        // explains where a failed physical exchange stopped.
+    if(window && phone_window && !expired()) {
+        uint16_t progress=pairing_connection==BLE_HS_CONN_HANDLE_NONE?0:
+            gopine_sm_progress(pairing_connection);
+        for(unsigned i=0;i<2;i++) {
+            struct phone_peer *peer=&phone_peers[i];
+            if(peer->handle==BLE_HS_CONN_HANDLE_NONE)continue;
+            if(!progress)progress=gopine_sm_progress(peer->handle);
+            gopine_ancs_poll(peer->handle,phone_link_ready(peer->handle));
+        }
+        // Publish one selected procedure per poll. Alternating two phases
+        // would keep waking Go and fill the trace even when neither advanced.
         if(progress && progress!=pairing_progress) {
-            pairing_progress=progress;lifecycle_changed=true;
+            pairing_progress=progress;trace_pairing(8,progress);lifecycle_changed=true;
         }
     }
-    if(window && phone_window && !expired())
-        gopine_ancs_poll(connection,phone_link_ready(connection));
+    if(phone_advertising_pending) {
+        phone_advertising_pending=false;
+        advertise();
+    }
+    update_links_poll();
+    update_notify();
+    battery_snapshot_notify();
     if (window && expired()) gopine_ble_stop();
     if (!window && host_up && !stopping) gopine_ble_stop();
     finish_stop();
@@ -543,6 +942,13 @@ void gopine_ble_controller_poll(void) {
 }
 
 uint32_t gopine_ble_pairing_code(void) {return pairing_code;}
+int gopine_ble_cancel_pairing(void) {
+    struct phone_peer *peer=phone_peer_find(pairing_connection);
+    if(peer)phone_peer_close(peer);
+    pairing_code=0;pairing_io_pending=false;pairing_connection=BLE_HS_CONN_HANDLE_NONE;
+    lifecycle_changed=true;
+    return 0;
+}
 uint32_t gopine_ble_pairing_diagnostics(void) {
     return last_security_status | ((uint32_t)last_disconnect_reason<<16);
 }
@@ -559,9 +965,17 @@ int gopine_ble_forget_phone(void) {
 int gopine_ble_busy(void) { return initialized && (host_up || stopping); }
 
 int gopine_ble_take(uint8_t *value, uint32_t *age) {
-    if (window && phone_window && !expired())
-        return phone_time_take(&phone_time_incoming, connection, peer_generation,
-                               ble_npl_time_get(), value, age);
+    if(window && phone_window && !expired()) {
+        for(unsigned i=0;i<2;i++) {
+            unsigned at=(time_cursor+i)%2;
+            struct phone_peer *peer=&phone_peers[at];
+            if(peer->handle==BLE_HS_CONN_HANDLE_NONE)continue;
+            int size=phone_time_take(&peer->time,peer->handle,peer->generation,
+                                     ble_npl_time_get(),value,age);
+            if(size){time_cursor=(at+1)%2;return size;}
+        }
+        return 0;
+    }
     if (!pending || !window) return 0;
     memcpy(value, incoming, incoming_len);
     *age = ble_npl_time_get() - received_at;
@@ -573,6 +987,15 @@ int gopine_ble_take(uint8_t *value, uint32_t *age) {
 }
 int gopine_ble_error(void) { return failure; }
 
+void gopine_ble_phone_setup(void) {
+    if(!window || !phone_window || stopping)return;
+    fast_until=ble_npl_time_get()+30000;
+    slow_advertising=false;
+    if(gopine_ble_peer_count()==2)return;
+    int rc=ble_gap_adv_stop();
+    if(rc && rc!=BLE_HS_EALREADY){failure=rc;last_security_status=rc;trace_pairing(10,rc);lifecycle_changed=true;return;}
+    advertise();
+}
 int gopine_ble_start_phone(const uint8_t *value, uint8_t battery, uint32_t window_ms) {
     return start_window(value,battery,window_ms,false,true);
 }
@@ -580,14 +1003,23 @@ int gopine_ble_start_update(uint8_t battery) {
     // Set before start_window because an already-synced host advertises there.
     update_window=true;
     memset(&update_incoming,0,sizeof(update_incoming));
-    memset(update_status,0,sizeof(update_status));update_status[0]=1;update_status[1]=1;
+    memset(update_status,0,sizeof(update_status));update_status[0]=2;update_status[1]=1;
     uint8_t time[10]={0};
     int rc=start_window(time,battery,600000,false,false);
     if(rc)update_window=false;
     return rc;
 }
 void gopine_ble_update_status(const uint8_t *status) {
-    memcpy(update_status,status,16);
+    update_complete(&update_incoming,status);
+    // Byte 3 belongs to the transport, not the Go state machine.
+    if(memcmp(update_status,status,3) || memcmp(update_status+4,status+4,12)) {
+        memcpy(update_status,status,3);memcpy(update_status+4,status+4,12);
+        for(unsigned i=0;i<UPDATE_LINK_COUNT;i++) {
+            struct update_link *link=&update_links.entries[i];
+            if(link->subscribed && (update_links.owner==BLE_HS_CONN_HANDLE_NONE ||
+               update_links.owner==link->handle))link->dirty=true;
+        }
+    }
     if(window && update_window)expires_at=ble_npl_time_get()+600000;
 }
 int gopine_ble_take_update(uint8_t *out,unsigned *size) {
@@ -595,61 +1027,105 @@ int gopine_ble_take_update(uint8_t *out,unsigned *size) {
     return update_take(&update_incoming,out,size);
 }
 int gopine_ble_take_notification(uint8_t *out) {
-    if(!window || !phone_window || expired()) return 0;
-    if(phone_link_permission(connection)) {
-        memset(&notification_incoming,0,sizeof(notification_incoming));
-        return 0;
+    if(!window || !phone_window || expired())return 0;
+    for(unsigned i=0;i<2;i++) {
+        unsigned at=(notification_cursor+i)%2;
+        struct phone_peer *peer=&phone_peers[at];
+        if(peer->handle==BLE_HS_CONN_HANDLE_NONE)continue;
+        if(phone_link_permission(peer->handle)) {
+            memset(&peer->notification,0,sizeof(peer->notification));continue;
+        }
+        if(!phone_link_ready(peer->handle))continue;
+        int size=notification_take(&peer->notification,out);
+        if(size){notification_cursor=(at+1)%2;return size;}
     }
-    if(!phone_link_ready(connection))return 0;
-    return notification_take(&notification_incoming,out);
+    return 0;
 }
 int gopine_ble_take_apple_notification(uint8_t *out) {
-    bool trusted=window && phone_window && !expired() && phone_link_ready(connection);
-    return gopine_ancs_take(out,trusted);
+    return gopine_ancs_take(out,window && phone_window && !expired());
 }
 int gopine_ble_take_music(uint8_t *out) {
-    if(!phone_window || !music_incoming.dirty) return 0;
-    enum phone_link_state link = phone_link_snapshot(connection,music_subscribed);
-    bool trusted = link==PHONE_LINK_CONNECTED || link==PHONE_LINK_MUSIC_READY;
-    if(!trusted && phone_link_permission(connection)) music_clear(&music_incoming);
-    // Preserve authenticated metadata received before phase 3, while exposing
-    // only the securing state to Go until the shared bond is complete.
-    memset(out,0,83);
-    if(trusted) {
-        memcpy(out,music_incoming.track,40);
-        memcpy(out+40,music_incoming.artist,40);
-        out[80]=music_incoming.status;
-        out[82]=music_incoming.status_known;
+    if(!phone_window || !music_snapshot_dirty)return 0;
+    struct phone_peer *peer=phone_peer_find(connection);
+    enum phone_link_state link=phone_link_snapshot(connection,peer && peer->music_subscribed);
+    bool trusted=link==PHONE_LINK_CONNECTED || link==PHONE_LINK_MUSIC_READY;
+    if(peer && !trusted && phone_link_permission(peer->handle))music_clear(&peer->music);
+    // Metadata stays with the peer that supplied it. The source generation
+    // routes subsequent controls even if another peer connects in the interim.
+    memset(out,0,87);
+    if(peer && trusted) {
+        memcpy(out,peer->music.track,40);memcpy(out+40,peer->music.artist,40);
+        out[80]=peer->music.status;out[82]=peer->music.status_known;
     }
     out[81]=link;
-    for(unsigned i=0;i<4;i++) out[83+i]=(uint8_t)(peer_generation>>(i*8));
-    music_incoming.dirty=false;
+    uint32_t generation=peer?peer->generation:peer_generation;
+    for(unsigned i=0;i<4;i++)out[83+i]=(uint8_t)(generation>>(i*8));
+    if(peer)peer->music.dirty=false;
+    music_snapshot_dirty=false;
     return 1;
 }
-int gopine_ble_music_command(uint8_t command, uint32_t generation) {
-    if(!music_command_valid(command)) return BLE_HS_EINVAL;
-    if(!window || !phone_window || expired() || connection==BLE_HS_CONN_HANDLE_NONE || !music_subscribed || generation!=peer_generation)
-        return BLE_HS_ENOTCONN;
-    if(!phone_link_ready(connection)) return BLE_HS_ENOTCONN;
+int gopine_ble_music_command(uint8_t command,uint32_t generation) {
+    if(!music_command_valid(command))return BLE_HS_EINVAL;
+    if(!window || !phone_window || expired())return BLE_HS_ENOTCONN;
+    struct phone_peer *peer=NULL;
+    for(unsigned i=0;i<2;i++)if(phone_peers[i].handle!=BLE_HS_CONN_HANDLE_NONE &&
+        phone_peers[i].generation==generation){peer=&phone_peers[i];break;}
+    if(!peer || peer->close_requested || !peer->music_subscribed || !phone_link_ready(peer->handle))return BLE_HS_ENOTCONN;
     struct os_mbuf *om=ble_hs_mbuf_from_flat(&command,1);
-    if(!om) return BLE_HS_ENOMEM;
-    // NimBLE consumes the mbuf on success AND error. Handle zero is valid.
-    return ble_gattc_notify_custom(connection,music_handle,om);
+    if(!om)return BLE_HS_ENOMEM;
+    return ble_gattc_notify_custom(peer->handle,music_handle,om);
+}
+static uint32_t phone_peers_delay(uint32_t now) {
+    if(phone_advertising_pending)return 0;
+    uint32_t delay=UINT32_MAX;
+    for(unsigned i=0;i<2;i++) {
+        struct phone_peer *peer=&phone_peers[i];
+        if(peer->handle==BLE_HS_CONN_HANDLE_NONE)continue;
+        if(peer->close_requested) {
+            if(!peer->terminating) {
+                int32_t left=(int32_t)(peer->close_retry_at-now);
+                uint32_t due=left>0?(uint32_t)left:0;
+                if(due<delay)delay=due;
+            }
+            continue;
+        }
+        if(peer->battery_snapshot_pending)return 0;
+        if(peer->security_pending) {
+            int32_t left=(int32_t)(peer->security_retry_at-now);
+            uint32_t due=left>0?(uint32_t)left:0;
+            if(due<delay)delay=due;
+        }
+    }
+    return delay;
 }
 int gopine_ble_updates(void) {
-    bool ready=window && phone_window && phone_link_ready(connection);
-    return lifecycle_changed || (gopine_ble_busy() && gopine_ble_host_work_pending()) ||
-           gopine_ancs_updates() || (window && (failure || pending || update_incoming.kind ||
-                      ((!phone_window || ready) && (weather_incoming.sizes[0] || weather_incoming.sizes[1])) ||
-                      (phone_window && (music_incoming.dirty ||
-                          (ready && (phone_time_incoming.size || notification_incoming.count))))));
+    // Input waits only pump controller work. Timed per-peer work must return
+    // to the host poll as well as limiting its idle delay.
+    if(lifecycle_changed || (gopine_ble_busy() &&
+       (gopine_ble_host_work_pending() || gopine_bond_delay()==0)) || gopine_ancs_updates())return 1;
+    if(!window)return 0;
+    if(failure || pending || update_pending(&update_incoming))return 1;
+    if(update_window && update_links_delay(&update_links,ble_npl_time_get())==0)return 1;
+    if(!phone_window)return weather_incoming.sizes[0] || weather_incoming.sizes[1];
+    if(music_snapshot_dirty || phone_peers_delay(ble_npl_time_get())==0)return 1;
+    for(unsigned i=0;i<2;i++) {
+        struct phone_peer *peer=&phone_peers[i];
+        if(phone_link_ready(peer->handle) && (peer->weather.sizes[0] || peer->weather.sizes[1] ||
+           peer->time.size || peer->notification.count))return 1;
+    }
+    return 0;
 }
 void gopine_ble_ack_updates(void) { lifecycle_changed=false; }
 uint32_t gopine_ble_idle_ms(void) {
-    if(!gopine_ble_busy()) return 240000;
-    uint32_t delay=gopine_ble_next_work(), now=ble_npl_time_get();
-    if(window && phone_window && phone_link_ready(connection)) {
-        uint32_t ancs_delay=gopine_ancs_delay();
+    if(!gopine_ble_busy())return 240000;
+    uint32_t delay=gopine_ble_next_work(),now=ble_npl_time_get();
+    if(window && update_window) {
+        uint32_t update_delay=update_links_delay(&update_links,now);
+        if(update_delay<delay)delay=update_delay;
+    }
+    if(window && phone_window) {
+        uint32_t peer_delay=phone_peers_delay(now),ancs_delay=gopine_ancs_delay();
+        if(peer_delay<delay)delay=peer_delay;
         if(ancs_delay<delay)delay=ancs_delay;
     }
     uint32_t bond_delay=gopine_bond_delay();
@@ -657,12 +1133,12 @@ uint32_t gopine_ble_idle_ms(void) {
     if(window && !unbounded) {
         int32_t left=(int32_t)(expires_at-now);
         uint32_t due=left>0?(uint32_t)left:0;
-        if(due<delay) delay=due;
+        if(due<delay)delay=due;
     }
     if(!window && !stopping) {
         int32_t left=(int32_t)(disconnect_after-now);
         uint32_t due=disconnect_after && left>0?(uint32_t)left:0;
-        if(due<delay) delay=due;
+        if(due<delay)delay=due;
     }
     return delay;
 }

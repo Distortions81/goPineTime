@@ -14,7 +14,7 @@ type Receiver struct {
 	erased                    uint32
 	verified, commitAttempted bool
 	Version                   [8]byte
-	readback                  [192]byte
+	readback                  [236]byte
 }
 
 func (r *Receiver) Begin(f Flash, confirmed bool, total, session uint32) error {
@@ -34,7 +34,7 @@ func (r *Receiver) Begin(f Flash, confirmed bool, total, session uint32) error {
 }
 
 func (r *Receiver) Write(session, offset uint32, data []byte) error {
-	if r.flash == nil || r.verified || session != r.Session || offset != r.Offset || len(data) == 0 || len(data) > 192 || uint32(len(data)) > r.Total-r.Offset {
+	if r.flash == nil || r.verified || session != r.Session || offset != r.Offset || len(data) == 0 || len(data) > 236 || uint32(len(data)) > r.Total-r.Offset {
 		return errors.New("unexpected update chunk")
 	}
 	for len(data) > 0 {
@@ -72,18 +72,8 @@ func (r *Receiver) Verify(session uint32) error {
 	if err != nil {
 		return err
 	}
-	// The legacy packager may append four erased bytes to avoid a DFU bug.
-	if extra := int64(r.Total) - image.Size; extra != 0 {
-		if extra != 4 {
-			return errors.New("unexpected image tail")
-		}
-		var tail [4]byte
-		if err := readAt(r.flash, tail[:], Secondary+image.Size); err != nil {
-			return err
-		}
-		if tail != [4]byte{255, 255, 255, 255} {
-			return errors.New("invalid image tail")
-		}
+	if int64(r.Total) != image.Size {
+		return errors.New("unexpected image tail")
 	}
 	if err := readAt(r.flash, r.Version[:], Secondary+20); err != nil {
 		return err

@@ -32,7 +32,7 @@ func (f *fakeUpdateFlash) Close() { f.closed = true }
 
 type fakeUpdateRadio struct {
 	fakeTimeRadio
-	packet     [200]byte
+	packet     [244]byte
 	kind, size int
 	status     [16]byte
 	hostPumps  int
@@ -40,14 +40,15 @@ type fakeUpdateRadio struct {
 
 func (r *fakeUpdateRadio) Service()                { r.hostPumps++ }
 func (r *fakeUpdateRadio) StartUpdate(uint8) error { r.starts++; return nil }
-func (r *fakeUpdateRadio) TakeUpdate() ([200]byte, int, int) {
+func (r *fakeUpdateRadio) TakeUpdate(data *[244]byte) (int, int) {
 	k, n := r.kind, r.size
 	r.kind, r.size = 0, 0
-	return r.packet, k, n
+	*data = r.packet
+	return k, n
 }
 func (r *fakeUpdateRadio) UpdateStatus(s [16]byte) { r.status = s }
 func (r *fakeUpdateRadio) control(op byte, session, total uint32) {
-	r.packet = [200]byte{op}
+	r.packet = [244]byte{op}
 	binary.LittleEndian.PutUint32(r.packet[1:], session)
 	r.kind, r.size = 1, 5
 	if op == 1 {
@@ -88,6 +89,69 @@ func TestDirectUpdateDefersHostCallbacksToMainLoop(t *testing.T) {
 		t.Fatal("queued OTA packet was not handled independently of host dispatch")
 	}
 }
+
+type queuedUpdateRadio struct {
+	fakeUpdateRadio
+	packets [][]byte
+}
+
+func (r *queuedUpdateRadio) TakeUpdate(out *[244]byte) (int, int) {
+	if len(r.packets) == 0 {
+		return r.fakeUpdateRadio.TakeUpdate(out)
+	}
+	packet := r.packets[0]
+	r.packets = r.packets[1:]
+	return 2, copy(out[:], packet)
+}
+
+func updateDataPacket(session, offset uint32, data []byte) []byte {
+	packet := make([]byte, len(data)+8)
+	binary.LittleEndian.PutUint32(packet, session)
+	binary.LittleEndian.PutUint32(packet[4:], offset)
+	copy(packet[8:], data)
+	return packet
+}
+
+func TestDirectUpdateDrainsBoundedWindowBeforeCumulativeFlashAcknowledgement(t *testing.T) {
+	u, d, _, f, reboots := directFixture()
+	r := &queuedUpdateRadio{}
+	d.sync.radio = r
+	now, power := time.Now(), powerStatus{Percent: 80}
+	d.tick(u, now, power)
+	r.control(1, 42, 1000)
+	d.tick(u, now, power)
+	for i := 0; i < 3; i++ {
+		r.packets = append(r.packets, updateDataPacket(42, uint32(i*236), bytes.Repeat([]byte{byte(i + 1)}, 236)))
+	}
+	d.tick(u, now, power)
+	if len(r.packets) != 1 || d.receiver.Offset != 472 || binary.LittleEndian.Uint32(r.status[8:]) != 472 || r.hostPumps != 0 {
+		t.Fatal("update burst did not stop at two durable packets before returning to the main loop")
+	}
+	if !bytes.Equal(f.data[ota.Secondary:ota.Secondary+236], bytes.Repeat([]byte{1}, 236)) ||
+		!bytes.Equal(f.data[ota.Secondary+236:ota.Secondary+472], bytes.Repeat([]byte{2}, 236)) {
+		t.Fatal("acknowledged queued bytes before flash matched both packets")
+	}
+	u.transfer.open = false
+	d.tick(u, now, power)
+	if len(r.packets) != 1 || *reboots != 0 || !f.closed {
+		t.Fatal("cancellation consumed the next burst or activated firmware")
+	}
+}
+
+func TestDirectUpdateBurstStopsAtFirstFailedChunk(t *testing.T) {
+	u, d, _, _, reboots := directFixture()
+	r := &queuedUpdateRadio{}
+	d.sync.radio = r
+	now, power := time.Now(), powerStatus{Percent: 80}
+	d.tick(u, now, power)
+	r.control(1, 42, 1000)
+	d.tick(u, now, power)
+	r.packets = [][]byte{updateDataPacket(99, 0, []byte{1}), updateDataPacket(42, 0, []byte{2})}
+	d.tick(u, now, power)
+	if u.transfer.phase != updateFailed || d.receiver.Offset != 0 || len(r.packets) != 1 || r.status[2] == 0 || *reboots != 0 {
+		t.Fatal("a rejected first packet allowed later queued bytes to be written or acknowledged")
+	}
+}
 func TestDirectUpdateRequiresLocalInstallAndLeavesTrial(t *testing.T) {
 	u, d, r, f, reboots := directFixture()
 	now := time.Now()
@@ -107,7 +171,7 @@ func TestDirectUpdateRequiresLocalInstallAndLeavesTrial(t *testing.T) {
 	r.control(1, 42, uint32(len(image)))
 	d.tick(u, now, power)
 	for offset := 0; offset < len(image); {
-		end := min(offset+192, len(image))
+		end := min(offset+236, len(image))
 		r.chunk(42, uint32(offset), image[offset:end])
 		d.tick(u, now, power)
 		if d.receiver.Offset != uint32(end) {

@@ -303,6 +303,9 @@ func (p *settingsPersistence) flush(u *watchUI, now time.Time, allowed bool) boo
 func (c *timeSyncController) saveSettings(u *watchUI, p *settingsPersistence, now time.Time, allowed bool) time.Time {
 	p.update(u, now, false)
 	securing := u.phone != nil && u.phone.music.Link == music.LinkSecuring
+	if peers, ok := c.radio.(phonePeerRadio); ok {
+		securing = securing || peers.PeerCount() > peers.TrustedPeerCount()
+	}
 	canPause := c.phoneMode != phoneOff && !c.directMode && !u.pairingVisible() &&
 		!u.phoneSetupActive(now) && !securing
 	if due := p.deadline(allowed); canPause && !due.IsZero() && !now.Before(due) {

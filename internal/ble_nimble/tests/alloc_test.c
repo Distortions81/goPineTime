@@ -19,7 +19,7 @@ int main(void) {
         a = gopine_ble_realloc(a, 400);
         assert(a);
         for (int i = 0; i < 20; i++) assert(a[i] == 0x5a);
-        assert(!gopine_ble_realloc(a, 9000));
+        assert(!gopine_ble_realloc(a, 5120));
         assert(a[0] == 0x5a); // Failed realloc preserves the allocation.
         void *blocks[100]; int n = 0;
         while (n < 100 && (blocks[n] = gopine_ble_malloc(100))) n++;
@@ -27,7 +27,7 @@ int main(void) {
         for (int i = 0; i < n; i += 2) gopine_ble_free(blocks[i]);
         for (int i = 1; i < n; i += 2) gopine_ble_free(blocks[i]);
         gopine_ble_free(a);
-        void *large = gopine_ble_malloc(8000);
+        void *large = gopine_ble_malloc(5000);
         assert(large); gopine_ble_free(large);
     }
     gopine_ble_free(NULL);

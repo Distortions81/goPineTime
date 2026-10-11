@@ -23,6 +23,10 @@ type phoneRadio interface {
 	TakeMusic() ([music.SnapshotSize]byte, bool, error)
 	MusicCommand(byte, uint32) error
 }
+type phonePeerRadio interface {
+	PeerCount() int
+	TrustedPeerCount() int
+}
 type phoneState struct {
 	mode                       phoneMode
 	expires                    time.Time
@@ -35,6 +39,8 @@ type phoneState struct {
 	retryAt                    time.Time
 	setupUntil                 time.Time
 	setupRequested             bool
+	advertiseRequested         bool
+	peers, trustedPeers        uint8
 }
 
 func (u *watchUI) openMusic() {
@@ -48,7 +54,7 @@ func (u *watchUI) openPhone() {
 		u.phone = &phoneState{status: "Bluetooth off"}
 	}
 	u.page = pagePhone
-	u.phone.setupRequested = true
+	u.phone.setupRequested, u.phone.advertiseRequested = true, true
 }
 
 // Setup keeps the screen visible for a bounded time, while the persistent
@@ -56,7 +62,7 @@ func (u *watchUI) openPhone() {
 func (u *watchUI) phoneSetupActive(now time.Time) bool {
 	p := u.phone
 	return p != nil && p.mode != phoneOff && now.Before(p.setupUntil) &&
-		(p.music.Link == music.LinkDisconnected || p.music.Link == music.LinkSecuring)
+		(p.peers > p.trustedPeers || p.music.Link == music.LinkDisconnected || p.music.Link == music.LinkSecuring)
 }
 
 func (u *watchUI) phoneSetupVisible(now time.Time) bool {
@@ -69,6 +75,7 @@ func (p *phoneState) clearLink() {
 		p.revision++
 	}
 	p.queued, p.announced = false, false
+	p.peers, p.trustedPeers = 0, 0
 }
 
 func (p *phoneState) setMusicNote(note string) {
@@ -97,7 +104,7 @@ func (u *watchUI) handlePhone(e inputEvent, now time.Time, state updateState) {
 		u.back(state)
 		return
 	}
-	// All phone features share this connection, including while the screen sleeps.
+	// Both paired devices remain available while the screen sleeps.
 	if e.Kind != inputTap {
 		return
 	}
@@ -111,6 +118,7 @@ func (u *watchUI) handlePhone(e inputEvent, now time.Time, state updateState) {
 			u.phoneAuto, p.mode = true, phoneConnected
 			p.setupUntil, p.setupRequested = now.Add(phoneSetupDuration), false
 			p.retryAt = time.Time{}
+			p.advertiseRequested = true
 			if p.music.Link == music.LinkDisconnected {
 				p.status = "Waiting for phone"
 			}
@@ -200,6 +208,16 @@ func (c *timeSyncController) updatePhone(u *watchUI, now time.Time, battery uint
 		}
 		c.running, c.phoneMode = true, p.mode
 	}
+	if p.advertiseRequested {
+		p.advertiseRequested = false
+		if setup, ok := c.radio.(interface{ PhoneSetup() }); ok {
+			setup.PhoneSetup()
+		}
+	}
+	counts, haveCounts := r.(phonePeerRadio)
+	if haveCounts {
+		p.peers, p.trustedPeers = uint8(counts.PeerCount()), uint8(counts.TrustedPeerCount())
+	}
 	value, changed, err := r.TakeMusic()
 	if err != nil {
 		c.phoneError(u, now)
@@ -222,7 +240,21 @@ func (c *timeSyncController) updatePhone(u *watchUI, now time.Time, battery uint
 			p.status = "Securing connection"
 		case music.LinkMusicReady, music.LinkAuthenticated:
 			p.status = "Connected"
-			p.setupUntil = time.Time{}
+			if !haveCounts || p.peers == p.trustedPeers {
+				p.setupUntil = time.Time{}
+			}
+		}
+	}
+	if haveCounts {
+		switch {
+		case p.peers > p.trustedPeers:
+			p.status = "Securing connection"
+		case p.trustedPeers > 1:
+			p.status = "2 devices connected"
+		case p.trustedPeers == 1:
+			p.status = "Connected"
+		default:
+			p.status = "Waiting for phone"
 		}
 	}
 	if p.music.Link == music.LinkMusicReady && !p.announced {

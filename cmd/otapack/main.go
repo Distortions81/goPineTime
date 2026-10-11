@@ -1,4 +1,4 @@
-// otapack wraps a correctly linked TinyGo ELF in the stock InfiniTime format.
+// otapack wraps a correctly linked TinyGo ELF in the native goPine format.
 package main
 
 import (
@@ -57,7 +57,7 @@ func pack(input, version, out, boot string) error {
 	// A bootstrap image is wired-only; do not accidentally offer its recovery
 	// provisioning code as a normal OTA update.
 	if boot == "" {
-		if err := writeFile(filepath.Join(out, "gopine-dfu-"+version+".zip"), func(w io.Writer) error {
+		if err := writeFile(filepath.Join(out, "gopine-update-"+version+".zip"), func(w io.Writer) error {
 			return dfu.ZIP(w, image, name)
 		}); err != nil {
 			return err

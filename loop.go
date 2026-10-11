@@ -125,7 +125,7 @@ func (l *watchLoop) run() error {
 		if event.Kind == inputWake {
 			awake, painted = true, false
 			if (l.ui.page == pagePhone || l.ui.page == pagePairingSettings) && l.ui.phone != nil {
-				l.ui.phone.setupRequested = true
+				l.ui.phone.setupRequested, l.ui.phone.advertiseRequested = true, true
 			}
 			power = l.display.PowerStatus()
 			nextPower = now.Add(powerPollInterval)

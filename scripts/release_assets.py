@@ -7,7 +7,9 @@ import pathlib
 import re
 import shutil
 
-from ota_upload import PIN, read_package
+from ota_package import read_package
+
+PIN = '6c119eb52206b580b556b41633dddc1e1b66a8da'
 
 
 def version_from_tag(tag):
@@ -30,7 +32,7 @@ def stage(tag, commit, repository, source, output):
         raise ValueError('Expected full source commit SHA')
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
         raise ValueError('Expected GitHub owner/repository')
-    package = source / f'gopine-dfu-{version}.zip'
+    package = source / f'gopine-update-{version}.zip'
     digest, _, image, _ = read_package(package, version=version)
     report = source / f'gopine-resources-{version}.json'
     budgets = json.loads(report.read_text())
@@ -42,7 +44,7 @@ def stage(tag, commit, repository, source, output):
     shutil.copyfile(package, output / package.name)
     shutil.copyfile(report, output / report.name)
     info = dict(version=version, tag=tag, commit=commit, repository=repository,
-                tinygo='0.42.0', infinitime_commit=PIN, variant='ble',
+                tinygo='0.42.0', infinitime_commit=PIN, variant='ble', ota_protocol=2,
                 image_bytes=len(image), package=package.name, sha256=digest)
     (output / 'build-info.json').write_text(json.dumps(info, indent=2) + '\n')
     docs = f'https://github.com/{repository}/blob/{commit}/docs/ota.md'
@@ -56,9 +58,9 @@ def stage(tag, commit, repository, source, output):
 **{package.name}** for an application-only PineTime OTA update.
 The bootloader and stored InfiniTime recovery image are not replaced.
 
-## Update from goPine 0.3.13 or later
+## Update from goPine 0.3.22 or later
 
-The browser updater works with **BLE builds of goPine 0.3.13 or later** already
+The browser updater works with **BLE builds of goPine 0.3.22 or later** already
 installed on the watch. Use a browser with Web Bluetooth, such as Chrome or Edge
 on a supported computer, or Chrome on Android. Safari and Firefox do not support
 this connection. Linux may need additional browser configuration.
@@ -78,29 +80,19 @@ this connection. Linux may need additional browser configuration.
 5. Tap **INSTALL** on the watch, then **KEEP** after goPine boots successfully.
    A reset before KEEP returns to the available fallback.
 
-## Install from older goPine or InfiniTime recovery
-
-The browser updater cannot connect to the InfiniTime recovery clock. Use its
-firmware/Legacy DFU flow in a compatible companion tool, or the repository's
-Linux recovery updater, for the first installation. Do not use a resource-upload
-flow. If older goPine offers a recovery action under **Settings → Firmware
-update**, prepare the sender first and hold the on-screen button to enter it.
-Otherwise use the red recovery boot procedure at the end of these instructions.
-
-Download the ZIP and SHA256SUMS. On Linux, verify the ZIP with
-`sha256sum --check --ignore-missing SHA256SUMS` in the download directory.
-
-Using this repository's Linux updater (no Go or TinyGo needed for a downloaded ZIP):
+Download the ZIP and SHA256SUMS. On Linux, verify it with
+`sha256sum --check --ignore-missing SHA256SUMS`.
+For local browser controls, run:
 
 ```sh
 bash scripts/ota-update.sh {version} --package /path/to/{package.name} --web
 ```
 
-On first use, also specify `--adapter hci1 --address YOUR_RECOVERY_MAC` using
-your adapter and watch address. Python 3 with venv, Git and BlueZ/gatttool are
-required. Keep the watch nearby, disconnect phone apps, and click Upload as
-soon as recovery appears. The recovery updater never automatically retries a
-transfer. When goPine boots, tap **KEEP** before resetting the watch.
+On first use, specify `--adapter hci1 --address YOUR_GOPINE_MAC`.
+Native packages require OTA protocol 2. Older firmware needs a one-time
+transition using its original in-app sender, or a wired installation.
+Emergency InfiniTime recovery remains in the bootloader; this repository no
+longer supplies a recovery DFU sender or Nordic DFU packages.
 
 The watch must already have a compatible MCUboot/InfiniTime recovery setup.
 Read the [setup, recovery behavior and update instructions]({docs}) before

@@ -207,7 +207,7 @@ async function transfer() {
   controls();
   void keepAwake();
   try {
-    await updater.run();
+    const result = await updater.run();
     if (paused) return;
     finished = true;
     step(3);
@@ -215,7 +215,8 @@ async function transfer() {
     $('transfer-title').textContent = 'The rest is on your wrist';
     $('phase').textContent = 'Verified on watch';
     $('watch-label').textContent = 'Ready to install';
-    status('Tap INSTALL on the watch. When goPine reboots, tap KEEP to retain this firmware.');
+    const timing = result.timings;
+    status(`Verified in ${timing.total.toFixed(1)}s (data ${timing.data.toFixed(1)}s, checking ${timing.verify.toFixed(1)}s). Tap INSTALL on the watch, then KEEP after reboot.`);
     $('transfer-help').textContent = 'Only confirm below after the watch has booted successfully and you have tapped KEEP.';
     $('confirmed').hidden = false;
     updater.disconnect();
@@ -364,7 +365,7 @@ async function loadRelease() {
       if (!selectionRequested && !busy && !updater) status('Choose a goPine OTA ZIP to get started.');
       return;
     }
-    if (!/^firmware\/gopine-dfu-\d+\.\d+\.\d+(?:\+\d+)?\.zip$/.test(candidate.package) || !/^[a-f0-9]{64}$/.test(candidate.sha256) || typeof candidate.version !== 'string' || candidate.version.length > 40) throw new Error('Release metadata is invalid.');
+    if (!/^firmware\/gopine-update-\d+\.\d+\.\d+(?:\+\d+)?\.zip$/.test(candidate.package) || !/^[a-f0-9]{64}$/.test(candidate.sha256) || typeof candidate.version !== 'string' || candidate.version.length > 40) throw new Error('Release metadata is invalid.');
     release = candidate;
     $('latest').textContent = `Use release ${release.version}`;
     $('release-description').textContent = `goPine ${release.version} is the latest published release. You can also choose a local build.`;

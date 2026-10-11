@@ -7,20 +7,23 @@ import (
 
 type pairingTestRadio struct {
 	fakeTimeRadio
-	code       uint32
-	status     int
-	busy       bool
-	forgot     int
-	diagnostic uint32
-	progress   uint16
+	code             uint32
+	status           int
+	busy             bool
+	forgot           int
+	diagnostic       uint32
+	progress         uint16
+	count, cancelled int
 }
 
 func (r *pairingTestRadio) PairingCode() uint32        { return r.code }
 func (r *pairingTestRadio) PairingDiagnostics() uint32 { return r.diagnostic }
 func (r *pairingTestRadio) PairingProgress() uint16    { return r.progress }
 func (r *pairingTestRadio) BondStatus() int            { return r.status }
+func (r *pairingTestRadio) BondCount() int             { return r.count }
+func (r *pairingTestRadio) CancelPairing() error       { r.code = 0; r.cancelled++; return nil }
 func (r *pairingTestRadio) Busy() bool                 { return r.busy }
-func (r *pairingTestRadio) ForgetPhone() error         { r.forgot++; r.status = 0; return nil }
+func (r *pairingTestRadio) ForgetPhone() error         { r.forgot++; r.status = 0; r.count = 0; return nil }
 func (r *pairingTestRadio) Stop()                      { r.code = 0; r.stops++ }
 func TestPairingProgressRedrawsCodeAndInfo(t *testing.T) {
 	r := &pairingTestRadio{code: 123457, progress: 0x200}
@@ -41,6 +44,20 @@ func TestPairingProgressRedrawsCodeAndInfo(t *testing.T) {
 	c.updatePairing(&u)
 	if u.frameKey(time.Now(), powerStatus{}) == before || u.pairing.diagnostic != r.diagnostic || pairingStageText(u.pairing.progress) != "Checking code 5/20" {
 		t.Fatal("INFO lost progress or the retained security error")
+	}
+}
+
+func TestSavedDeviceCountRedrawsPairingInfo(t *testing.T) {
+	r := &pairingTestRadio{status: 2, count: 1}
+	c := timeSyncController{radio: r}
+	u := newWatchUI(firmwareConfirmed)
+	u.openPairingSettings()
+	c.updatePairing(&u)
+	before := u.frameKey(time.Now(), powerStatus{})
+	r.count = 2
+	c.updatePairing(&u)
+	if u.pairing.count != 2 || before == u.frameKey(time.Now(), powerStatus{}) {
+		t.Fatal("second saved device did not redraw pairing info")
 	}
 }
 
@@ -111,6 +128,7 @@ func TestPairingCodeAndCancel(t *testing.T) {
 	u.openWeather()
 	u.weather.open = true
 	u.page = pageWeatherSync
+	u.phoneAuto = true
 	if !c.updatePairing(&u) || !u.pairingVisible() {
 		t.Fatal("000000 must display and wake")
 	}
@@ -123,8 +141,8 @@ func TestPairingCodeAndCancel(t *testing.T) {
 	}
 	u.handle(inputEvent{Kind: inputTap, X: 100, Y: 200}, time.Now(), firmwareConfirmed, powerStatus{})
 	c.updatePairing(&u)
-	if u.pairingVisible() || c.running || u.weather.open {
-		t.Fatal("cancel retained live pairing")
+	if u.pairingVisible() || !c.running || !u.weather.open || !u.phoneAuto || r.stops != 0 || r.cancelled != 1 {
+		t.Fatal("cancel must only end the pending pairing and preserve other features")
 	}
 }
 func TestForgetWaitsForDisconnectAndRequiresConfirmation(t *testing.T) {
@@ -200,29 +218,31 @@ func TestForgetRechecksBondBeforeStoppingSharedConnection(t *testing.T) {
 	}
 }
 
-func TestPairingStorageErrorStillAllowsConfirmedReset(t *testing.T) {
-	r := &pairingTestRadio{busy: true, status: -1}
-	c := timeSyncController{radio: r, running: true}
-	u := newWatchUI(firmwareConfirmed)
-	u.phoneAuto = true
-	u.openPhone()
-	u.phone.mode = phoneConnected
-	u.openPairingSettings()
-	c.updatePairing(&u)
-	tap := inputEvent{Kind: inputTap, X: 100, Y: 190}
-	u.handlePairingSettings(tap)
-	c.updatePairing(&u)
-	if !u.pairing.confirm || r.stops != 0 || r.forgot != 0 {
-		t.Fatal("storage recovery skipped confirmation")
-	}
-	u.handlePairingSettings(tap)
-	c.updatePairing(&u)
-	if !u.pairing.forget || r.forgot != 0 || c.running || u.phoneAuto {
-		t.Fatal("storage recovery did not wait for disconnect")
-	}
-	r.busy = false
-	c.updatePairing(&u)
-	if r.forgot != 1 || u.pairing.status != 0 || u.pairing.note != "Forget watch on phone too" {
-		t.Fatal("storage recovery did not clear journal or explain phone-side cleanup")
+func TestUnusablePairingAllowsOnlyConfirmedReset(t *testing.T) {
+	for _, status := range []int{-1, -3} {
+		r := &pairingTestRadio{busy: true, status: status}
+		c := timeSyncController{radio: r, running: true}
+		u := newWatchUI(firmwareConfirmed)
+		u.phoneAuto = true
+		u.openPhone()
+		u.phone.mode = phoneConnected
+		u.openPairingSettings()
+		c.updatePairing(&u)
+		tap := inputEvent{Kind: inputTap, X: 100, Y: 190}
+		u.handlePairingSettings(tap)
+		c.updatePairing(&u)
+		if !u.pairing.confirm || r.stops != 0 || r.forgot != 0 {
+			t.Fatal("storage recovery skipped confirmation")
+		}
+		u.handlePairingSettings(tap)
+		c.updatePairing(&u)
+		if !u.pairing.forget || r.forgot != 0 || c.running || u.phoneAuto {
+			t.Fatal("storage recovery did not wait for disconnect")
+		}
+		r.busy = false
+		c.updatePairing(&u)
+		if r.forgot != 1 || u.pairing.status != 0 || u.pairing.note != "Forget on devices too" {
+			t.Fatal("storage recovery did not clear journal or explain phone-side cleanup")
+		}
 	}
 }

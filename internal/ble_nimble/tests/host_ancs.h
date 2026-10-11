@@ -4,12 +4,24 @@ static const uint8_t apple_ancs_uuid[]={0xd0,0,0x2d,0x12,0x1e,0x4b,0x0f,0xa4,0x9
 static const uint8_t apple_source_uuid[]={0xbd,0x1d,0xa2,0x99,0xe6,0x25,0x58,0x8c,0xd9,0x42,1,0x63,0x0d,0x12,0xbf,0x9f};
 static const uint8_t apple_control_uuid[]={0xd9,0xd9,0xaa,0xfd,0xbd,0x9b,0x21,0x98,0xa8,0x49,0xe1,0x45,0xf3,0xd8,0xd1,0x69};
 static const uint8_t apple_data_uuid[]={0xfb,0x7b,0x7c,0xce,0x6a,0xb3,0x44,0xbe,0xb5,0x4b,0xd6,0x24,0xe9,0xc6,0xea,0x22};
-static bool apple_service_available, apple_data_subscribed, apple_source_subscribed;
-static bool apple_deny_subscription;
-static unsigned apple_attributes, apple_service_queries;
+struct apple_server {
+    bool available,data_subscribed,source_subscribed,deny_subscription;
+    unsigned attributes,queries;
+};
+static struct apple_server apple_servers[2];
+static uint16_t apple_connection=1;
+static bool apple_hold_attributes;
+static struct client_request apple_held_attributes[2];
+static unsigned apple_held_count;
+#define apple_service_available (apple_servers[apple_connection-1].available)
+#define apple_data_subscribed (apple_servers[apple_connection-1].data_subscribed)
+#define apple_source_subscribed (apple_servers[apple_connection-1].source_subscribed)
+#define apple_deny_subscription (apple_servers[apple_connection-1].deny_subscription)
+#define apple_attributes (apple_servers[apple_connection-1].attributes)
+#define apple_service_queries (apple_servers[apple_connection-1].queries)
 
 static void apple_att(const uint8_t *data,unsigned size) {
-    receive_l2cap(BLE_L2CAP_CID_ATT,data,size);
+    receive_l2cap_on(apple_connection,BLE_L2CAP_CID_ATT,data,size);
 }
 static void apple_notify(uint16_t handle,const uint8_t *data,unsigned size,bool indicate) {
     uint8_t packet[32]={indicate?BLE_ATT_OP_INDICATE_REQ:BLE_ATT_OP_NOTIFY_REQ};
@@ -25,6 +37,8 @@ static void apple_error(const struct client_request *request,uint8_t error) {
     apple_att(response,sizeof(response));
 }
 static void apple_answer(const struct client_request *request) {
+    assert(request->connection>=1 && request->connection<=2);
+    apple_connection=request->connection;
     const uint8_t *data=request->data;
     uint16_t start=get_le16(data+1);
     switch(data[0]) {
@@ -82,6 +96,9 @@ static void apple_answer(const struct client_request *request) {
         assert(data[3]==0 && data[8]==1 && get_le16(data+9)==40 &&
                data[11]==3 && get_le16(data+12)==100);
         apple_attributes++;
+        if(apple_hold_attributes) {
+            assert(apple_held_count<2);apple_held_attributes[apple_held_count++]=*request;return;
+        }
         const uint8_t response=BLE_ATT_OP_WRITE_RSP;apple_att(&response,1);
         uint8_t attributes[151]={0};memcpy(attributes+1,data+4,4);
         attributes[5]=1;put_le16(attributes+6,40);memset(attributes+8,'T',40);
@@ -106,12 +123,12 @@ static void apple_drain(void) {
     }
 }
 static void phone_ancs_traffic(bool service_changed,bool authorization_retry) {
-    retain_apple=true;apple_service_available=true;
+    apple_connection=1;retain_apple=true;apple_service_available=true;
     apple_data_subscribed=apple_source_subscribed=false;
     apple_deny_subscription=authorization_retry;
     unsigned before=apple_attributes;
     assert(client_request_count);apple_drain();
-    uint8_t out[147];
+    uint8_t out[ANCS_PACKET_SIZE];
     if(authorization_retry) {
         assert(!apple_data_subscribed && !apple_source_subscribed && apple_attributes==before);
         int n=gopine_ble_take_apple_notification(out);
@@ -130,19 +147,19 @@ static void phone_ancs_traffic(bool service_changed,bool authorization_retry) {
     // Setup/connection clear may precede the first notification.
     int n=gopine_ble_take_apple_notification(out);
     if(n && out[4]==3)n=gopine_ble_take_apple_notification(out);
-    assert(n==147 && get_le32(out)==0x12345678 && out[4]==0 && out[6]==4);
+    assert(n==ANCS_PACKET_SIZE && get_le32(out)==0x12345678 && out[4]==0 && out[6]==4);
     for(unsigned i=7;i<47;i++)assert(out[i]=='T');
     for(unsigned i=47;i<147;i++)assert(out[i]=='B');
     assert(!gopine_ble_take_apple_notification(out));
     apple_source(0x12345678,2);
-    assert(gopine_ble_take_apple_notification(out)==147 && out[4]==2);
+    assert(gopine_ble_take_apple_notification(out)==ANCS_PACKET_SIZE && out[4]==2);
     assert(!client_request_count); // Removal never requests expired attributes.
     if(service_changed) {
         unsigned confirmations=indication_confirmations,queries=apple_service_queries;
         apple_service_available=false;
         const uint8_t changed[]={20,0,40,0};apple_notify(3,changed,4,true);apple_drain();
         assert(indication_confirmations==confirmations+1 && apple_service_queries>queries);
-        assert(gopine_ble_take_apple_notification(out)==147 && out[4]==3);
+        assert(gopine_ble_take_apple_notification(out)==ANCS_PACKET_SIZE && out[4]==3);
         assert(!gopine_ble_take_apple_notification(out));
         // A later publish indication must restart discovery on this same bond.
         apple_service_available=true;apple_data_subscribed=apple_source_subscribed=false;
@@ -150,7 +167,7 @@ static void phone_ancs_traffic(bool service_changed,bool authorization_retry) {
         assert(indication_confirmations==confirmations+2 && apple_attributes==before+2);
         n=gopine_ble_take_apple_notification(out);
         if(n && out[4]==3)n=gopine_ble_take_apple_notification(out);
-        assert(n==147 && out[4]==0 && get_le32(out)==0x12345678);
+        assert(n==ANCS_PACKET_SIZE && out[4]==0 && get_le32(out)==0x12345678);
     }
     assert(connection==1 && !phone_link_permission(1) && !client_request_count);
     retain_apple=false;

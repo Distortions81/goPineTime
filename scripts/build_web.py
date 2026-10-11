@@ -11,11 +11,11 @@ import tempfile
 import urllib.parse
 import urllib.request
 
-from ota_upload import read_package
+from ota_package import read_package
 from release_assets import version_from_tag
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-MIN_VERSION = (0, 3, 13, 0)
+MIN_VERSION = (0, 3, 22, 0)
 MAX_PACKAGE = 1024 * 1024
 MAX_JSON = 2 * 1024 * 1024
 MAX_INFO = 16 * 1024
@@ -141,7 +141,7 @@ def checked_firmware(client, output):
         return None
     tag = release['tag_name']
     version = version_from_tag(tag)
-    filename = f'gopine-dfu-{version}.zip'
+    filename = f'gopine-update-{version}.zip'
     assets = release.get('assets')
     if not isinstance(assets, list) or len(assets) > 100:
         raise ValueError('Invalid release asset list')

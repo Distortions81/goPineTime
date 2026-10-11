@@ -169,7 +169,7 @@ func (u *watchUI) frameKey(now time.Time, power powerStatus) frameKey {
 		return frameKey{page: pagePairing, step: int(u.pairing.code), syncSecond: int64(u.pairing.progress)}
 	}
 	if u.page == pagePairingSettings && u.pairing != nil {
-		return frameKey{page: pagePairingSettings, step: u.pairing.status, holding: u.pairing.confirm, message: u.pairing.note, syncSecond: int64(u.pairing.diagnostic) | int64(u.pairing.progress)<<32}
+		return frameKey{page: pagePairingSettings, step: u.pairing.status, holding: u.pairing.confirm, message: u.pairing.note, syncSecond: int64(u.pairing.diagnostic) | int64(u.pairing.progress)<<32 | int64(u.pairing.count)<<48}
 	}
 	if u.powerNoticeVisible() {
 		return frameKey{page: pageCharging, percent: power.Percent, power: power.State}

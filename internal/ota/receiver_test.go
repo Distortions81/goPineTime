@@ -15,7 +15,7 @@ func receive(t *testing.T, f *memoryFlash, image []byte) *ota.Receiver {
 	}
 	for r.Offset < uint32(len(image)) {
 		start := r.Offset
-		end := min(start+192, uint32(len(image)))
+		end := min(start+236, uint32(len(image)))
 		if err := r.Write(42, start, image[start:end]); err != nil {
 			t.Fatal(err)
 		}
@@ -68,7 +68,7 @@ func TestDirectReceiverRejectsWrongChunksAndCorruption(t *testing.T) {
 	for _, tc := range []struct {
 		id, offset uint32
 		data       []byte
-	}{{41, 0, image[:20]}, {42, 1, image[:20]}, {42, 0, nil}, {42, 0, image[:193]}} {
+	}{{41, 0, image[:20]}, {42, 1, image[:20]}, {42, 0, nil}, {42, 0, image[:237]}} {
 		if err := r.Write(tc.id, tc.offset, tc.data); err == nil || r.Offset != 0 {
 			t.Fatal("accepted bad chunk")
 		}
@@ -92,7 +92,7 @@ func TestDirectReceiverPowerCutsNeverCommitIncompleteImage(t *testing.T) {
 		err := rx.Begin(broken, true, uint32(len(image)), 42)
 		for err == nil && rx.Offset < uint32(len(image)) {
 			start := rx.Offset
-			end := min(start+192, uint32(len(image)))
+			end := min(start+236, uint32(len(image)))
 			err = rx.Write(42, start, image[start:end])
 		}
 		if err == nil {

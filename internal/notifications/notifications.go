@@ -6,28 +6,29 @@ import "unicode/utf8"
 const (
 	MaxPacket   = 103 // Three-byte companion header and up to 100 text bytes.
 	Capacity    = 4
-	ApplePacket = 147
+	ApplePacket = 148 // ANCS record plus the connection's source slot.
 )
 
 type Message struct {
-	ID       uint32
-	Title    [40]byte
-	Body     [100]byte
-	Category byte
-	Unread   bool
-	Apple    bool
-	RemoteID uint32
+	ID          uint32
+	Title       [40]byte
+	Body        [100]byte
+	Category    byte
+	Unread      bool
+	Apple       bool
+	AppleSource byte
+	RemoteID    uint32
 }
 
-// ApplyApple handles bounded ANCS records from the authenticated iPhone link.
-// IDs belong to one ANCS session; clearing the session preserves Android ANS.
+// ApplyApple handles bounded ANCS records from authenticated iPhone links.
+// Remote IDs and session clears are local to their source slot.
 func (b *Inbox) ApplyApple(packet []byte) (changed, buzz bool) {
-	if len(packet) != ApplePacket || packet[4] > 3 {
+	if len(packet) != ApplePacket || packet[4] > 3 || packet[147] < 1 || packet[147] > 2 {
 		return false, false
 	}
 	if packet[4] == 3 {
 		for i := b.Count - 1; i >= 0; i-- {
-			if b.Messages[i].Apple {
+			if b.Messages[i].Apple && b.Messages[i].AppleSource == packet[147] {
 				b.Dismiss(b.Messages[i].ID)
 				changed = true
 			}
@@ -37,7 +38,7 @@ func (b *Inbox) ApplyApple(packet []byte) (changed, buzz bool) {
 	uid := uint32(packet[0]) | uint32(packet[1])<<8 | uint32(packet[2])<<16 | uint32(packet[3])<<24
 	existing := -1
 	for i := 0; i < b.Count; i++ {
-		if b.Messages[i].Apple && b.Messages[i].RemoteID == uid {
+		if b.Messages[i].Apple && b.Messages[i].AppleSource == packet[147] && b.Messages[i].RemoteID == uid {
 			existing = i
 			break
 		}
@@ -49,9 +50,9 @@ func (b *Inbox) ApplyApple(packet []byte) (changed, buzz bool) {
 		}
 		return false, false
 	}
-	m := Message{Apple: true, RemoteID: uid, Unread: true, Category: appleCategory(packet[5])}
+	m := Message{Apple: true, AppleSource: packet[147], RemoteID: uid, Unread: true, Category: appleCategory(packet[5])}
 	clean(m.Title[:], packet[7:47])
-	clean(m.Body[:], packet[47:])
+	clean(m.Body[:], packet[47:147])
 	if m.Title[0] == 0 && m.Body[0] == 0 {
 		return false, false
 	}

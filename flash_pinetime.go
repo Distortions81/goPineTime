@@ -17,7 +17,7 @@ type externalFlash struct{}
 
 func wakeFlash() error {
 	err := flashTransaction([]byte{0xab}, nil, nil)
-	time.Sleep(time.Millisecond)
+	pauseWithRadio(time.Millisecond)
 	return err
 }
 
@@ -139,7 +139,7 @@ func (f *externalFlash) waitReady() error {
 		if !time.Now().Before(deadline) {
 			return errors.New("external flash timed out")
 		}
-		time.Sleep(time.Millisecond)
+		pauseWithRadio(time.Millisecond)
 	}
 }
 

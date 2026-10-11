@@ -20,7 +20,7 @@ const directUpdateWindow = 10 * time.Minute
 type directUpdateRadio interface {
 	timeRadio
 	StartUpdate(uint8) error
-	TakeUpdate() ([200]byte, int, int)
+	TakeUpdate(*[244]byte) (int, int)
 	UpdateStatus([16]byte)
 }
 type updateFlash interface {
@@ -38,7 +38,7 @@ type directUpdater struct {
 	sync      *timeSyncController
 	flash     updateFlash
 	receiver  ota.Receiver
-	packet    [200]byte
+	packet    [244]byte
 	openFlash func() (updateFlash, error)
 	confirmed func() bool
 	powerOK   func() bool
@@ -72,7 +72,7 @@ func (d *directUpdater) fail(u *watchUI, message string) {
 }
 func (d *directUpdater) publish(u *watchUI, r directUpdateRadio) {
 	var status [16]byte
-	status[0], status[1] = 1, u.transfer.phase
+	status[0], status[1] = 2, u.transfer.phase
 	if u.transfer.phase == updateFailed {
 		status[2] = 1
 	}
@@ -173,45 +173,53 @@ func (d *directUpdater) tick(u *watchUI, now time.Time, power powerStatus) {
 		d.publish(u, r)
 		return
 	}
-	var kind, size int
-	d.packet, kind, size = r.TakeUpdate()
-	data := d.packet[:]
-	if kind != 0 && size > 0 && size <= len(data) && t.phase != updateFailed {
-		if kind == 1 && size == 9 && data[0] == 1 && t.phase == updateWaiting {
-			if !d.confirmed() || !d.powerOK() {
-				d.fail(u, "Check power and KEEP")
-			} else {
-				f, err := d.openFlash()
-				if err != nil {
-					d.fail(u, "Flash unavailable")
+	// Drain at most the negotiated two-packet window. Each publish releases its
+	// transport reservation after readback; notifications coalesce until the
+	// shallow host pump runs. Then return to input and alarm processing.
+	for drained := 0; drained < 2 && t.open && t.phase != updateFailed && t.phase != updateVerifying; drained++ {
+		kind, size := r.TakeUpdate(&d.packet)
+		if kind == 0 {
+			break
+		}
+		data := d.packet[:]
+		if kind != 0 && size > 0 && size <= len(data) && t.phase != updateFailed {
+			if kind == 1 && size == 9 && data[0] == 1 && t.phase == updateWaiting {
+				if !d.confirmed() || !d.powerOK() {
+					d.fail(u, "Check power and KEEP")
 				} else {
-					d.flash = f
-					if err := d.receiver.Begin(f, true, binary.LittleEndian.Uint32(data[5:]), binary.LittleEndian.Uint32(data[1:])); err != nil {
-						d.fail(u, "Update request failed")
+					f, err := d.openFlash()
+					if err != nil {
+						d.fail(u, "Flash unavailable")
 					} else {
-						t.phase = updateReceiving
+						d.flash = f
+						if err := d.receiver.Begin(f, true, binary.LittleEndian.Uint32(data[5:]), binary.LittleEndian.Uint32(data[1:])); err != nil {
+							d.fail(u, "Update request failed")
+						} else {
+							t.phase = updateReceiving
+						}
 					}
 				}
-			}
-		} else if kind == 2 && size > 8 && t.phase == updateReceiving {
-			if err := d.receiver.Write(binary.LittleEndian.Uint32(data[:]), binary.LittleEndian.Uint32(data[4:]), data[8:size]); err != nil {
-				d.fail(u, "Transfer interrupted")
-			}
-		} else if kind == 1 && size == 5 && binary.LittleEndian.Uint32(data[1:]) == d.receiver.Session {
-			switch data[0] {
-			case 2:
-				if t.phase == updateReceiving && d.receiver.Offset == d.receiver.Total {
-					t.phase = updateVerifying
-				} else {
-					d.fail(u, "Update incomplete")
+			} else if kind == 2 && size > 8 && t.phase == updateReceiving {
+				if err := d.receiver.Write(binary.LittleEndian.Uint32(data[:]), binary.LittleEndian.Uint32(data[4:]), data[8:size]); err != nil {
+					d.fail(u, "Transfer interrupted")
 				}
-			case 3:
-				t.open = false
+			} else if kind == 1 && size == 5 && binary.LittleEndian.Uint32(data[1:]) == d.receiver.Session {
+				switch data[0] {
+				case 2:
+					if t.phase == updateReceiving && d.receiver.Offset == d.receiver.Total {
+						t.phase = updateVerifying
+					} else {
+						d.fail(u, "Update incomplete")
+					}
+				case 3:
+					t.open = false
+				}
+			} else {
+				d.fail(u, "Unexpected update data")
 			}
-		} else {
-			d.fail(u, "Unexpected update data")
+			t.expires = now.Add(directUpdateWindow)
 		}
-		t.expires = now.Add(directUpdateWindow)
+		d.publish(u, r)
 	}
 	if d.receiver.Total > 0 {
 		t.percent = int(d.receiver.Offset * 100 / d.receiver.Total)

@@ -199,7 +199,7 @@ func (d *pineTimeDisplay) Wait(duration time.Duration) (inputEvent, error) {
 				return inputEvent{Kind: inputWake}, nil
 			}
 			// Bound event rate without sleeping through the next touch IRQ.
-			time.Sleep(touchPollInterval)
+			pauseWithRadio(touchPollInterval)
 			return touch.inputEvent, nil
 		}
 
@@ -312,16 +312,16 @@ func (d *pineTimeDisplay) setScreen(on bool) error {
 		d.touch.Wake()
 		// SLPOUT also requires 5 ms before another LCD command, including
 		// when touch-to-wake is on and touch.Wake returns immediately.
-		time.Sleep(6 * time.Millisecond)
+		pauseWithRadio(6 * time.Millisecond)
 		setBacklight(true)
 	} else {
 		setBacklight(false)
-		if err := d.lcdPower.sleep(time.Now, time.Sleep, d.DeviceOf.Sleep); err != nil {
+		if err := d.lcdPower.sleep(time.Now, pauseWithRadio, d.DeviceOf.Sleep); err != nil {
 			return err
 		}
 		// TinyGo's driver waits 5 ms after SLPIN. Add a tick-rounding margin
 		// before releasing the bus and D/C pin, as InfiniTime does.
-		time.Sleep(time.Millisecond)
+		pauseWithRadio(time.Millisecond)
 		suspendDisplaySPI()
 		disconnectInput(machine.LCD_RS)
 		if !d.touchWake {

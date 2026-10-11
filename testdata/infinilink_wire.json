@@ -1,6 +1,36 @@
 {
   "source_revision": "60abe2d2c67aff67726855374385a499d9353a94",
   "provenance": "Synthetic values encoded from InfiniLink SetTime.swift and BLEWriteManager.swift; not a physical phone capture.",
+  "classic_contract": {
+    "source_revision": "d9f13a5d785b25b30870eb6ea99d4716b554a9b0",
+    "marketing_version": "1.0.2",
+    "scope": "Historical official source with Home, Charts, Settings tabs and MARKETING_VERSION 1.0.2. This identifies a source-derived startup requirement, not the exact installed App Store binary. Packet fixtures retain their separate newer source_revision.",
+    "source_files": [
+      {"path": "InfiniLink/View Components/Home View/WelcomeView.swift", "sha256": "ba8331bece0dc31350903843fa5d3e5def503be7cce420d1491c408be3d4ba23", "lines": [17], "evidence": "Home requires isConnectedToPinetime and deviceInfo.firmware != empty string."},
+      {"path": "InfiniLink/BLE/DeviceInfo.swift", "sha256": "1389abc6f05d71e32ca06e68aa22ac01ab3dbb552faee506d7212fc0c4c5af3b", "lines": [27, 42, 43, 56, 59], "evidence": "Firmware Revision UUID is 2A26, read on discovery, and decoded as UTF-8 or an empty string."},
+      {"path": "InfiniLink/BLE/BLEDelegates.swift", "sha256": "fbb897e00b362acc4bdc6631ef8c869b5de9bfe888761f5cd5c8bedc0e806616", "lines": [41], "evidence": "Every discovered characteristic is passed to DeviceInfoManager.readInfoCharacteristics."},
+      {"path": "InfiniLink/ContentView.swift", "sha256": "298c2fe80e83c07ab1234778bdb616cc03372005afaf09560cb84afaa17f5630", "lines": [57, 68, 79], "evidence": "This source presents Home, Charts, Settings tabs."}
+    ],
+    "characteristics": {
+      "firmware_revision": {"uuid": "00002a26-0000-1000-8000-00805f9b34fb", "properties": ["read"], "discovery_actions": ["read"], "readiness": "nonempty_utf8"}
+    }
+  },
+  "companion_contract": {
+    "source_files": ["InfiniLink/BLE/BLEManager.swift", "InfiniLink/BLE/BLECharacteristicHandler.swift", "InfiniLink/BLE/BLEWriteManager.swift"],
+    "scope": "The goPine-supported subset of InfiniLink characteristics. Actions are ordered within each characteristic callback, not across service discovery callbacks. Battery value receipt is required for InfiniLink's Connected label; other characteristics support features.",
+    "characteristics": {
+      "battery": {"uuid": "00002a19-0000-1000-8000-00805f9b34fb", "properties": ["read", "notify"], "discovery_actions": ["read", "subscribe"]},
+      "current_time": {"uuid": "00002a2b-0000-1000-8000-00805f9b34fb", "properties": ["write"], "discovery_actions": ["retain", "write_current_time"]},
+      "music_control": {"uuid": "00000001-78fc-48fe-8e23-433b3a1942d0", "properties": ["notify"], "discovery_actions": ["subscribe", "retain"]},
+      "music_status": {"uuid": "00000002-78fc-48fe-8e23-433b3a1942d0", "properties": ["write"], "discovery_actions": ["retain"]},
+      "music_artist": {"uuid": "00000003-78fc-48fe-8e23-433b3a1942d0", "properties": ["write"], "discovery_actions": ["retain"]},
+      "music_track": {"uuid": "00000004-78fc-48fe-8e23-433b3a1942d0", "properties": ["write"], "discovery_actions": ["retain"]},
+      "music_position": {"uuid": "00000006-78fc-48fe-8e23-433b3a1942d0", "properties": ["write"], "discovery_actions": ["retain"]},
+      "music_length": {"uuid": "00000007-78fc-48fe-8e23-433b3a1942d0", "properties": ["write"], "discovery_actions": ["retain"]},
+      "weather": {"uuid": "00050001-78fc-48fe-8e23-433b3a1942d0", "properties": ["write"], "discovery_actions": ["retain"]},
+      "alert": {"uuid": "00002a46-0000-1000-8000-00805f9b34fb", "properties": ["write"], "discovery_actions": ["retain"]}
+    }
+  },
   "packets": {
     "time_9": "ea070a050c2238027d",
     "time_10": "ea070a050c2238021388",

@@ -8,6 +8,7 @@ import (
 type pairingRadio interface {
 	PairingCode() uint32
 	BondStatus() int
+	CancelPairing() error
 	ForgetPhone() error
 }
 
@@ -16,6 +17,7 @@ const pairingStageBaseline = 174
 type pairingState struct {
 	code                    uint32 // code + 1, so 000000 remains valid
 	status                  int
+	count                   int
 	cancel, forget, confirm bool
 	note                    string
 	diagnostic              uint32
@@ -25,7 +27,7 @@ type pairingState struct {
 func forgettableBond(status int) bool {
 	// A storage failure can be recovered by clearing the bond journal. Unknown,
 	// absent, or still-saving bonds must never expose an erase action.
-	return status == 2 || status == -1
+	return status == 2 || status == -1 || status == -3
 }
 
 func (u *watchUI) pairingVisible() bool {
@@ -56,6 +58,9 @@ func (c *timeSyncController) updatePairing(u *watchUI) bool {
 	}
 	previousStatus := p.status
 	p.status = r.BondStatus()
+	if counts, ok := c.radio.(interface{ BondCount() int }); ok {
+		p.count = counts.BondCount()
+	}
 	if diagnostic, ok := c.radio.(interface{ PairingDiagnostics() uint32 }); ok {
 		p.diagnostic = diagnostic.PairingDiagnostics()
 	}
@@ -72,7 +77,16 @@ func (c *timeSyncController) updatePairing(u *watchUI) bool {
 			p.note = ""
 		}
 	}
-	if p.cancel || p.forget {
+	if p.cancel {
+		p.cancel = false
+		if r.CancelPairing() != nil {
+			p.note = "Could not cancel pairing"
+		} else {
+			p.code = 0
+		}
+		return false
+	}
+	if p.forget {
 		u.phoneAuto = false
 		c.close()
 		u.sync.Cancel()
@@ -85,12 +99,11 @@ func (c *timeSyncController) updatePairing(u *watchUI) bool {
 			u.phone.clearLink()
 		}
 		p.code = 0
-		p.cancel = false
 		if p.forget && !radioBusy(c.radio) {
 			if err := r.ForgetPhone(); err != nil {
-				p.note = "Could not forget phone"
+				p.note = "Could not clear pairings"
 			} else {
-				p.note = "Forget watch on phone too"
+				p.note = "Forget on devices too"
 			}
 			p.forget = false
 			p.status = r.BondStatus()
@@ -133,9 +146,9 @@ func (u *watchUI) handlePairingSettings(e inputEvent) {
 	}
 }
 func (u *watchUI) drawPairing(d canvas) {
-	centered(d, &uifont.Bold18, 31, "PAIR PHONE", white)
+	centered(d, &uifont.Bold18, 31, "PAIR DEVICE", white)
 	centered(d, &uifont.Regular18, 70, "Enter this code", muted)
-	centered(d, &uifont.Regular18, 95, "on your phone", muted)
+	centered(d, &uifont.Regular18, 95, "on your device", muted)
 	var digits [6]byte
 	code := u.pairing.code - 1
 	for i := 5; i >= 0; i-- {
@@ -152,14 +165,16 @@ func (u *watchUI) drawPairingSettings(d canvas, now time.Time) {
 	centered(d, &uifont.Bold18, 29, "PAIRING", white)
 	status := "Pairing not checked"
 	switch p.status {
+	case -3:
+		status = "Pairing needs reset"
 	case -1:
 		status = "Pairing storage error"
 	case 0:
-		status = "No saved phone"
+		status = "No saved devices"
 	case 1:
 		status = "Saving pairing..."
 	case 2:
-		status = "Phone pairing saved"
+		status = decimal(p.count) + "/2 devices saved"
 	}
 	centered(d, &uifont.Regular18, 80, status, accent)
 	if p.diagnostic != 0 {
@@ -174,9 +189,9 @@ func (u *watchUI) drawPairingSettings(d canvas, now time.Time) {
 		if !forgettableBond(p.status) {
 			if p.status == 1 {
 				centered(d, &uifont.Regular18, 120, "Please wait", muted)
-			} else if p.note == "Forget watch on phone too" {
+			} else if p.note == "Forget on devices too" {
 				centered(d, &uifont.Regular18, 120, "Forget this watch in", muted)
-				centered(d, &uifont.Regular18, 147, "your phone settings", muted)
+				centered(d, &uifont.Regular18, 147, "each device's settings", muted)
 				centered(d, &uifont.Regular18, 185, "Use CONNECT PHONE", muted)
 				centered(d, &uifont.Regular18, 212, "to pair again", muted)
 			} else {
@@ -196,12 +211,15 @@ func (u *watchUI) drawPairingSettings(d canvas, now time.Time) {
 		}
 		note := p.note
 		if note == "" && p.status == 2 {
-			note = "Shared by all apps"
+			note = "Two devices supported"
+		}
+		if note == "" && p.status == -3 {
+			note = "Saved key cannot be used"
 		}
 		centered(d, &uifont.Regular18, 115, note, muted)
 	}
-	label := "FORGET PHONE"
-	if p.status == -1 {
+	label := "FORGET ALL"
+	if p.status == -1 || p.status == -3 {
 		label = "RESET PAIRING"
 	}
 	if p.confirm {

@@ -25,15 +25,6 @@ function crc32(bytes) {
   for (const byte of bytes) crc = (crc >>> 8) ^ crcTable[(crc ^ byte) & 255];
   return (crc ^ 0xffffffff) >>> 0;
 }
-function crc16(bytes) {
-  let crc = 0xffff;
-  for (const byte of bytes) {
-    crc ^= byte << 8;
-    for (let bit = 0; bit < 8; bit++) crc = ((crc << 1) ^ ((crc & 0x8000) ? 0x1021 : 0)) & 0xffff;
-  }
-  return crc;
-}
-
 function checkExtra(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let offset = 0;
@@ -77,16 +68,16 @@ async function readZip(bytes) {
   for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
     if (u32(i) === 0x06054b50 && i + 22 + u16(i + 20) === bytes.length) { end = i; break; }
   }
-  check(end >= 0, 'Choose an intact goPine DFU ZIP file.');
-  check(u16(end + 4) === 0 && u16(end + 6) === 0 && u16(end + 8) === 3 && u16(end + 10) === 3,
-    'Expected one application-only DFU ZIP containing three files.');
+  check(end >= 0, 'Choose an intact goPine update ZIP file.');
+  check(u16(end + 4) === 0 && u16(end + 6) === 0 && u16(end + 8) === 2 && u16(end + 10) === 2,
+    'Expected one goPine update ZIP containing two files.');
   const directory = u32(end + 16), directorySize = u32(end + 12);
   check(directory + directorySize === end, 'Invalid firmware ZIP directory.');
   const entries = [];
   const names = new Set();
   let cursor = directory;
   const decoder = new TextDecoder('utf-8', {fatal: true});
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 2; i++) {
     check(cursor + 46 <= end && u32(cursor) === 0x02014b50, 'Invalid firmware ZIP entry.');
     const flags = u16(cursor + 8), method = u16(cursor + 10), crc = u32(cursor + 16);
     const compressedSize = u32(cursor + 20), size = u32(cursor + 24);
@@ -105,7 +96,7 @@ async function readZip(bytes) {
     entries.push({name, nameBytes, flags, method, crc, compressedSize, size, local: u32(cursor + 42)});
     cursor = next;
   }
-  check(cursor === end && names.has('manifest.json'), 'Expected an application-only DFU manifest.');
+  check(cursor === end && names.has('manifest.json'), 'Expected a goPine update manifest.');
   // Contiguous, nonoverlapping local entries prevent aliases and ambiguous ZIPs.
   entries.sort((a, b) => a.local - b.local);
   cursor = 0;
@@ -141,7 +132,7 @@ async function readZip(bytes) {
   return files;
 }
 
-/** Validate ZIP layout, manifest, MCUboot header/vectors/SHA-256 and DFU CRC.
+/** Validate ZIP layout, manifest, MCUboot header/vectors/SHA-256 and application SHA-256.
  * expectedSha256 is the checksum of the complete ZIP, supplied by release metadata.
  * These checks establish package integrity; they are not a firmware signature.
  */
@@ -157,15 +148,14 @@ export async function inspectPackage(buffer, {expectedSha256} = {}) {
   const files = await readZip(bytes);
   check(files.get('manifest.json').length <= 16384, 'Oversized firmware manifest.');
   let manifest;
-  try { manifest = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(files.get('manifest.json'))).manifest; }
+  try { manifest = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(files.get('manifest.json'))); }
   catch { throw new FirmwareError('Invalid firmware manifest.'); }
-  check(manifest && typeof manifest === 'object' && Object.keys(manifest).sort().join(',') === 'application,dfu_version',
-    'Bootloader and SoftDevice packages are not supported.');
-  const app = manifest.application;
-  check(app && typeof app.bin_file === 'string' && typeof app.dat_file === 'string' && app.bin_file !== app.dat_file &&
-    app.bin_file !== 'manifest.json' && app.dat_file !== 'manifest.json' && files.has(app.bin_file) && files.has(app.dat_file),
+  check(manifest && typeof manifest === 'object' && Object.keys(manifest).sort().join(',') === 'format,image,protocol,sha256' &&
+    manifest.format === 'gopine-update' && manifest.protocol === 2, 'Expected a native goPine protocol-2 application package.');
+  check(typeof manifest.image === 'string' && manifest.image !== 'manifest.json' && files.has(manifest.image),
     'Firmware manifest does not match the ZIP entries.');
-  const image = files.get(app.bin_file), init = files.get(app.dat_file);
+  const image = files.get(manifest.image);
+  check(manifest.sha256 === hex(await sha256(image)), 'Application checksum mismatch.');
   check(image.length >= 80 && image.length <= MAX_IMAGE_BYTES, 'Invalid application size.');
   const view = new DataView(image.buffer, image.byteOffset, image.byteLength);
   const body = view.getUint32(12, true);
@@ -178,12 +168,7 @@ export async function inspectPackage(buffer, {expectedSha256} = {}) {
   const end = 32 + body;
   check(equal(image.subarray(end, end + 8), Uint8Array.of(7, 0x69, 0x28, 0, 0x10, 0, 0x20, 0)) &&
     equal(image.subarray(end + 8, end + 40), await sha256(image.subarray(0, end))), 'MCUboot image hash mismatch.');
-  const tail = image.subarray(end + 40);
-  check((tail.length === 0 || (tail.length === 4 && tail.every(byte => byte === 255))) && image.length % 200 !== 0,
-    'Invalid DFU tail padding.');
-  const expectedInit = Uint8Array.of(0x52, 0, 255, 255, 255, 255, 255, 255, 1, 0, 0xfe, 255, 0, 0);
-  new DataView(expectedInit.buffer).setUint16(12, crc16(image), true);
-  check(equal(init, expectedInit), 'DFU init packet or CRC mismatch.');
+  check(image.length === end + 40, 'Unexpected image tail.');
   const major = image[20], minor = image[21], revision = view.getUint16(22, true), build = view.getUint32(24, true);
   return {image, version: `${major}.${minor}.${revision}${build ? `+${build}` : ''}`, sha256: digest};
 }

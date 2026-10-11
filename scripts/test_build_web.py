@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Offline release selection, provenance, bounds, and Pages staging checks."""
-import binascii
 import hashlib
 import io
 import json
@@ -18,23 +17,21 @@ REPOSITORY = 'Distortions81/goPineTime'
 COMMIT = 'a' * 40
 
 
-def package(version=(0, 3, 15, 0)):
+def package(version=(0, 3, 22, 0)):
     image = bytearray(48)
     struct.pack_into('<IIHHII', image, 0, 0x96f3b83d, 0, 32, 0, 16, 0)
     struct.pack_into('<BBHI', image, 20, *version)
     struct.pack_into('<II', image, 32, 0x20010000, 0x8029)
     image += bytes.fromhex('0769280010002000') + hashlib.sha256(image).digest()
-    init = bytes.fromhex('5200ffffffffffff0100feff') + struct.pack('<H', binascii.crc_hqx(image, 0xffff))
     output = io.BytesIO()
     with zipfile.ZipFile(output, 'w') as archive:
-        archive.writestr('manifest.json', json.dumps({'manifest': {'dfu_version': 0.5,
-                          'application': {'bin_file': 'app.bin', 'dat_file': 'app.dat'}}}))
+        archive.writestr('manifest.json', json.dumps({'format':'gopine-update','protocol':2,
+                          'image':'app.bin','sha256':hashlib.sha256(image).hexdigest()}))
         archive.writestr('app.bin', image)
-        archive.writestr('app.dat', init)
     return output.getvalue(), len(image)
 
 
-def release(tag='v0.3.15', **kwargs):
+def release(tag='v0.3.22', **kwargs):
     return dict(tag_name=tag, draft=False, prerelease=False, published_at='2026-10-09T12:00:00Z', **kwargs)
 
 
@@ -43,8 +40,8 @@ class FakeGitHub(web.GitHub):
         super().__init__(REPOSITORY)
         self.calls = []
         self.data, image_size = package()
-        self.info = dict(version='0.3.15', tag='v0.3.15', repository=REPOSITORY,
-                         variant='ble', package='gopine-dfu-0.3.15.zip', commit=COMMIT,
+        self.info = dict(version='0.3.22', tag='v0.3.22', repository=REPOSITORY,
+                         variant='ble', package='gopine-update-0.3.22.zip', commit=COMMIT,
                          sha256=hashlib.sha256(self.data).hexdigest(), image_bytes=image_size)
         self.release = release(assets=[])
         self.tags = {'object': {'sha': COMMIT, 'type': 'commit'}}
@@ -53,13 +50,13 @@ class FakeGitHub(web.GitHub):
     def update(self):
         self.info_bytes = json.dumps(self.info).encode()
         self.release['assets'] = [dict(id=1, name='build-info.json', size=len(self.info_bytes)),
-                                  dict(id=2, name='gopine-dfu-0.3.15.zip', size=len(self.data))]
+                                  dict(id=2, name='gopine-update-0.3.22.zip', size=len(self.data))]
 
     def fetch(self, path, limit=web.MAX_JSON, binary=False):
         self.calls.append(path)
         values = {'/releases?per_page=100&page=1': [self.release],
                   '/releases/assets/1': self.info_bytes, '/releases/assets/2': self.data,
-                  '/git/ref/tags/v0.3.15': self.tags,
+                  '/git/ref/tags/v0.3.22': self.tags,
                   '/git/tags/' + 'b'*40: {'object': {'type': 'commit', 'sha': COMMIT}}}
         return values[path]
 
@@ -83,11 +80,11 @@ class WebBuildTests(unittest.TestCase):
         manifest = self.build()
         firmware = manifest['firmware']
         self.assertEqual(manifest, json.loads((self.output / 'firmware/latest.json').read_text()))
-        self.assertEqual(firmware['package'], 'firmware/gopine-dfu-0.3.15.zip')
+        self.assertEqual(firmware['package'], 'firmware/gopine-update-0.3.22.zip')
         self.assertEqual((self.output / firmware['package']).read_bytes(), self.client.data)
         self.assertEqual(firmware['commit'], COMMIT)
         self.assertEqual(firmware['sha256'], hashlib.sha256(self.client.data).hexdigest())
-        self.assertEqual(firmware['releaseUrl'], 'https://github.com/' + REPOSITORY + '/releases/tag/v0.3.15')
+        self.assertEqual(firmware['releaseUrl'], 'https://github.com/' + REPOSITORY + '/releases/tag/v0.3.22')
         self.assertTrue((self.output / 'index.html').exists())
         self.assertTrue((self.output / '.nojekyll').exists())
         self.assertFalse((self.output / 'firmware/build-info.json').exists())
@@ -100,11 +97,11 @@ class WebBuildTests(unittest.TestCase):
         self.assertEqual(list((self.output / 'firmware').iterdir()), [self.output / 'firmware/latest.json'])
 
     def test_selects_latest_stable_compatible_version(self):
-        releases = [release('v0.3.12'), release('v0.3.13'), release('v0.3.15+9'), release('v0.3.15+10'),
+        releases = [release('v0.3.12'), release('v0.3.21'), release('v0.3.22+9'), release('v0.3.22+10'),
                     release('v0.3.14'), release('v0.3.16-rc1'), release('v1.0.0'), release('v2.0.0')]
         releases[-2]['prerelease'] = True
         releases[-1]['draft'] = True
-        self.assertEqual(web.select_release(releases)['tag_name'], 'v0.3.15+10')
+        self.assertEqual(web.select_release(releases)['tag_name'], 'v0.3.22+10')
         self.assertIsNone(web.select_release([release('v0.3.12'), release('../evil'), release('v' + '1'*200)]))
 
     def test_provenance_and_package_failures_leave_no_site(self):
@@ -193,7 +190,7 @@ class WebBuildTests(unittest.TestCase):
 
     def test_release_listing_is_paginated_and_bounded(self):
         first = [release('v0.3.1')] * 100
-        with patch.object(self.client, 'fetch', side_effect=[first, [release('v0.3.15')]]) as fetch:
+        with patch.object(self.client, 'fetch', side_effect=[first, [release('v0.3.22')]]) as fetch:
             self.assertEqual(len(self.client.releases()), 101)
             self.assertEqual(fetch.call_args.args[0], '/releases?per_page=100&page=2')
         with patch.object(self.client, 'fetch', return_value=first), self.assertRaises(ValueError):

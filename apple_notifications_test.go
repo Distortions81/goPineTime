@@ -24,6 +24,7 @@ func appleTestPacket(uid uint32, event, flags byte) (p [notifications.ApplePacke
 		p[i] = byte(uid >> uint(i*8))
 	}
 	p[4], p[5], p[6] = event, 4, flags
+	p[147] = 1
 	copy(p[7:47], "Messages")
 	copy(p[47:], "Hello from iPhone")
 	return

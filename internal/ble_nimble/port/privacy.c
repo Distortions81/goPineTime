@@ -1,12 +1,18 @@
-// InfiniTime restores bonds through ble_store_write_peer_sec after host sync,
-// which installs each peer IRK into the controller. Our flash journal restores
-// host RAM before startup; replay only that controller side effect after reset.
+// The pinned host restores peer IRKs before its sync callback, but logs and
+// discards individual HCI failures. Perform a checked replay before advertising.
+// Replace any entry it already installed: the real controller rejects a second
+// Add Resolving List command for the same identity instead of replacing it.
 #include "ble_hs_priv.h"
 
 static int restore_peer_irk(int type, union ble_store_value *value, void *arg) {
     if(type!=BLE_STORE_OBJ_TYPE_PEER_SEC || !value->sec.irk_present ||
        !ble_addr_cmp(&value->sec.peer_addr,BLE_ADDR_ANY))return 0;
-    int rc=ble_hs_pvcy_add_entry(value->sec.peer_addr.val,
+    int rc=ble_hs_pvcy_remove_entry(value->sec.peer_addr.type,
+                                   value->sec.peer_addr.val);
+    // A failed upstream replay leaves no entry. Other removal failures must
+    // remain visible, and neither operation changes the saved bond journal.
+    if(!rc || rc==BLE_HS_HCI_ERR(BLE_ERR_UNK_CONN_ID))
+        rc=ble_hs_pvcy_add_entry(value->sec.peer_addr.val,
                                 value->sec.peer_addr.type,value->sec.irk);
     // Upstream treats a nonzero callback return as successful early stopping,
     // so carry the actual HCI failure separately instead of losing it.

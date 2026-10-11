@@ -54,6 +54,7 @@ def main():
         sources += prepare_crypto(nimble, Path(output))
         command = ['clang', '-g', '-O1', '-fsanitize=address,undefined',
                    '-Wno-pointer-to-int-cast', '-DBLE_NPL_OS_ALIGNMENT=8',
+                   '-DGOPINE_BLE_ALLOC_AUDIT',
                    '-DGOPINE_ECC_YIELD=gopine_test_ecc_yield',
                    '-include', str(port / 'config.h')]
         command += [f'-I{p}' for p in includes]

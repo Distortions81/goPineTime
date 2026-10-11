@@ -13,14 +13,6 @@ function crc32(bytes) {
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
-function crc16(bytes) {
-  let crc = 0xffff;
-  for (const byte of bytes) {
-    crc ^= byte * 256;
-    for (let bit = 0; bit < 8; bit++) crc = ((crc * 2) ^ ((crc & 32768) ? 0x1021 : 0)) & 65535;
-  }
-  return crc;
-}
 function makeImage({build = 0, tail = Buffer.alloc(0), changeHeader} = {}) {
   const header = Buffer.alloc(32);
   header.writeUInt32LE(0x96f3b83d, 0);
@@ -34,17 +26,11 @@ function makeImage({build = 0, tail = Buffer.alloc(0), changeHeader} = {}) {
   const content = Buffer.concat([header, body]);
   return Buffer.concat([content, Buffer.from('0769280010002000', 'hex'), hash(content), tail]);
 }
-function initFor(image) {
-  const init = Buffer.from('5200ffffffffffff0100feff0000', 'hex');
-  init.writeUInt16LE(crc16(image), 12);
-  return init;
-}
 function entriesFor(image = makeImage()) {
   return [
-    {name: 'application.bin', bytes: image}, {name: 'application.dat', bytes: initFor(image)},
-    {name: 'manifest.json', bytes: Buffer.from(JSON.stringify({manifest: {
-      application: {bin_file: 'application.bin', dat_file: 'application.dat'}, dfu_version: 0.5,
-    }}))},
+    {name: 'application.bin', bytes: image},
+    {name: 'manifest.json', bytes: Buffer.from(JSON.stringify({format: 'gopine-update', protocol: 2,
+      image: 'application.bin', sha256: hash(image).toString('hex')}))},
   ];
 }
 function zip(entries = entriesFor(), {deflate = false, descriptor = false} = {}) {
@@ -91,7 +77,7 @@ test('validates a stored package and preserves a uint32 build version', async ()
   assert.equal(result.sha256, hash(bytes).toString('hex'));
 });
 test('validates deflated packages with streaming ZIP descriptors', async () => {
-  const image = makeImage({tail: Buffer.alloc(4, 255)});
+  const image = makeImage();
   const result = await inspectPackage(zip(entriesFor(image), {deflate: true, descriptor: true}));
   assert.equal(result.version, '0.3.15');
   assert.deepEqual(result.image, new Uint8Array(image));
@@ -120,7 +106,7 @@ test('rejects duplicates, path entries, encryption, and extra images', async () 
   }
   const encrypted = entriesFor(); encrypted[0].flags = 1;
   await rejects(zip(encrypted), /encrypted/);
-  await rejects(zip([...entriesFor(), {name: 'bootloader.bin', bytes: Buffer.alloc(1)}]), /three files/);
+  await rejects(zip([...entriesFor(), {name: 'bootloader.bin', bytes: Buffer.alloc(1)}]), /two files/);
 });
 test('checks ZIP CRC and header consistency before trusting data', async () => {
   const entries = entriesFor(); entries[0].crc = 7;
@@ -136,12 +122,12 @@ test('bounds declared and actual decompression sizes', async () => {
 });
 test('rejects non-application manifests and mismatched filenames', async () => {
   const entries = entriesFor();
-  entries[2].bytes = Buffer.from('{"manifest":{"bootloader":{},"dfu_version":0.5}}');
-  await rejects(zip(entries), /Bootloader/);
-  entries[2].bytes = Buffer.from('{"manifest":{"application":{"bin_file":"manifest.json","dat_file":"application.dat"},"dfu_version":0.5}}');
+  entries[1].bytes = Buffer.from('{"manifest":{"bootloader":{},"dfu_version":0.5}}');
+  await rejects(zip(entries), /protocol-2/);
+  entries[1].bytes = Buffer.from(JSON.stringify({format:'gopine-update',protocol:2,image:'manifest.json',sha256:'0'.repeat(64)}));
   await rejects(zip(entries), /manifest does not match/);
-  entries[2].bytes = Buffer.from('null');
-  await rejects(zip(entries), /manifest/);
+  entries[1].bytes = Buffer.from('null');
+  await rejects(zip(entries), /protocol-2/);
 });
 test('rejects images with wrong MCUboot header or PineTime load vectors', async () => {
   await rejects(zip(entriesFor(makeImage({changeHeader: header => header.writeUInt32LE(1)}))), /MCUboot/);
@@ -152,11 +138,12 @@ test('rejects images with wrong MCUboot header or PineTime load vectors', async 
     await rejects(zip(entriesFor(makeImage({changeHeader: (_, body) => body.writeUInt32LE(reset, 4)}))), /PineTime/);
   }
 });
-test('validates MCUboot hash, tail padding, and DFU CRC independently', async () => {
+test('validates MCUboot hash, exact image length, and application checksum independently', async () => {
   const damaged = makeImage(); damaged[50] ^= 1;
   await rejects(zip(entriesFor(damaged)), /image hash/);
-  await rejects(zip(entriesFor(makeImage({tail: Buffer.alloc(4)}))), /tail padding/);
-  await rejects(zip(entriesFor(makeImage({tail: Buffer.alloc(1, 255)}))), /tail padding/);
-  const badInit = entriesFor(); badInit[1].bytes[12] ^= 1;
-  await rejects(zip(badInit), /init packet or CRC/);
+  await rejects(zip(entriesFor(makeImage({tail: Buffer.alloc(4)}))), /image tail/);
+  await rejects(zip(entriesFor(makeImage({tail: Buffer.alloc(1, 255)}))), /image tail/);
+  const badHash = entriesFor(); const manifest = JSON.parse(badHash[1].bytes); manifest.sha256 = '0'.repeat(64);
+  badHash[1].bytes = Buffer.from(JSON.stringify(manifest));
+  await rejects(zip(badHash), /Application checksum/);
 });

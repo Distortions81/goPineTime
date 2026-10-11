@@ -14,7 +14,16 @@ static unsigned key_writes, freed_procs, identity_events;
 static int expected_status, locked;
 static int fail_our_key, fail_peer_key;
 static bool drop_on_peer_key, change_on_peer_key;
+static bool allow_new_peer;
 struct ble_hs_cfg ble_hs_cfg;
+bool gopine_bond_can_pair(uint16_t conn_handle) {
+    assert(conn_handle==7);
+    return allow_new_peer;
+}
+void gopine_ble_trace_security(uint8_t event,uint16_t status) {
+    (void)event;(void)status;
+    assert(!"unexpected lookup or pairing-request path");
+}
 
 // Including the vendor state machines retains their dispatch tables under
 // ASan. Unexercised transport/cryptographic entry points must never run here.
@@ -151,16 +160,21 @@ static void reset(void) {
     key_writes = freed_procs = identity_events = 0;
     fail_our_key = fail_peer_key = 0;
     drop_on_peer_key = change_on_peer_key = false;
+    allow_new_peer = true;
     STAILQ_INIT(&ble_sm_procs);
     expected_status = locked = 0;
     connected = true;
 }
-static void complete_pairing(bool use_rpa) {
+static void complete_pairing(bool use_rpa, unsigned flags, uint8_t key_size) {
     // The central has subscribed before the first pairing completes. No CCCD
     // exists in storage yet. Use the real upstream key-exchange completion.
     configs[0].flags = configs[1].flags = BLE_GATTS_CLT_CFG_F_NOTIFY;
-    struct ble_sm_proc proc = {.conn_handle = 7, .key_size = 16,
-        .flags = BLE_SM_PROC_F_BONDING | BLE_SM_PROC_F_AUTHENTICATED};
+    struct ble_sm_proc proc = {.conn_handle = 7, .key_size = key_size, .flags = flags};
+    proc.our_keys.ltk_valid = proc.peer_keys.ltk_valid = 1;
+    proc.our_keys.ediv_rand_valid = proc.peer_keys.ediv_rand_valid = 1;
+    proc.our_keys.key_size = proc.peer_keys.key_size = key_size;
+    memset(proc.our_keys.ltk,0x56,sizeof(proc.our_keys.ltk));
+    memcpy(proc.peer_keys.ltk,proc.our_keys.ltk,sizeof(proc.peer_keys.ltk));
     if (use_rpa) {
         test_conn.bhc_peer_rpa_addr = test_conn.bhc_peer_addr;
         proc.peer_keys.addr_valid = 1;
@@ -170,17 +184,21 @@ static void complete_pairing(bool use_rpa) {
     struct ble_sm_result res = {0};
     ble_sm_key_exch_success(&proc, &res);
     assert(test_conn.bhc_sec_state.encrypted && test_conn.bhc_sec_state.bonded);
-    assert(test_conn.bhc_sec_state.authenticated && proc.state == BLE_SM_PROC_STATE_NONE);
+    assert(test_conn.bhc_sec_state.authenticated == !!(flags & BLE_SM_PROC_F_AUTHENTICATED));
+    assert(proc.state == BLE_SM_PROC_STATE_NONE);
     assert(res.enc_cb && !res.app_status);
     // The actual upstream result path invokes the wrapper, then persists keys.
     STAILQ_INSERT_HEAD(&ble_sm_procs, &proc, next);
     ble_sm_process_result(7, &res);
-    assert(key_writes == 2 && freed_procs == 1 && STAILQ_EMPTY(&ble_sm_procs));
+    unsigned expected_keys = allow_new_peer && key_size==16 && (flags & BLE_SM_PROC_F_AUTHENTICATED) &&
+        (flags & BLE_SM_PROC_F_SC) ? (fail_our_key ? 1 : 2) : 0;
+    assert(key_writes == expected_keys && freed_procs == 1 && STAILQ_EMPTY(&ble_sm_procs));
     assert(pending_bond == BLE_HS_CONN_HANDLE_NONE && !pending_our_key);
 }
+#define STRONG_PAIRING (BLE_SM_PROC_F_BONDING | BLE_SM_PROC_F_AUTHENTICATED | BLE_SM_PROC_F_SC)
 static void test_pair_and_restore(bool use_rpa) {
     reset();
-    complete_pairing(use_rpa);
+    complete_pairing(use_rpa,STRONG_PAIRING,16);
     assert(enc_events == 1 && writes == 2 && saved_count == 2);
     assert(saved[0].flags == BLE_GATTS_CLT_CFG_F_NOTIFY);
     assert(saved[1].flags == BLE_GATTS_CLT_CFG_F_NOTIFY);
@@ -209,6 +227,12 @@ int main(void) {
     test_pair_and_restore(false);
     test_pair_and_restore(true);
 
+    // Identity distribution may identify a saved peer only after encryption.
+    // The actual result path must not replace either key or its subscriptions.
+    reset();allow_new_peer=false;
+    complete_pairing(true,STRONG_PAIRING,16);
+    assert(identity_events==1 && !key_writes && !writes && !saved_count);
+
     // Either failed key write, a disappearing peer, or an identity mismatch
     // must leave no persisted subscriptions and no pending state to leak.
     for (unsigned mode = 0; mode < 4; mode++) {
@@ -217,7 +241,7 @@ int main(void) {
         fail_peer_key = mode == 1 ? BLE_HS_ESTORE_FAIL : 0;
         drop_on_peer_key = mode == 2;
         change_on_peer_key = mode == 3;
-        complete_pairing(true);
+        complete_pairing(true,STRONG_PAIRING,16);
         assert(enc_events == 1 && !writes && !saved_count);
         connected = true;
         fail_our_key = fail_peer_key = 0;
@@ -225,8 +249,22 @@ int main(void) {
         struct ble_store_value_sec stale = {0};
         stale.peer_addr = test_conn.bhc_peer_addr;
         stale.peer_addr.type = ble_hs_misc_peer_addr_type_to_id(stale.peer_addr.type);
-        assert(!gopine_sm_store_peer_sec(&stale));
+        assert(gopine_sm_store_peer_sec(&stale)==BLE_HS_EAUTHEN);
         assert(!writes && pending_bond == BLE_HS_CONN_HANDLE_NONE);
+    }
+
+    // Real pinned completion/result paths would otherwise persist Just Works,
+    // undersized, or non-SC keys and consume a slot without usable phone
+    // authentication. Reject both key writes, including with a learned identity.
+    for(unsigned mode=0;mode<3;mode++) {
+        reset();
+        unsigned flags=STRONG_PAIRING;
+        if(mode==0)flags &= ~BLE_SM_PROC_F_AUTHENTICATED;
+        if(mode==2)flags &= ~BLE_SM_PROC_F_SC;
+        complete_pairing(true,flags,mode==1?12:16);
+        assert(enc_events==1 && !key_writes && !writes && !saved_count);
+        // A later authenticated attempt must still be able to save its keys.
+        test_pair_and_restore(true);
     }
 
     // An absent, unencrypted, or unbonded connection must not gain the flag.

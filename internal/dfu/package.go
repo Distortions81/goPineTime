@@ -1,4 +1,4 @@
-// Package dfu creates InfiniTime-compatible Nordic Legacy DFU packages.
+// Package dfu creates native goPine OTA packages and wired bootstrap images.
 // This host-side package is deliberately separate from the watch's OTA code.
 package dfu
 
@@ -176,52 +176,24 @@ func Image(body []byte, version Version) ([]byte, error) {
 	tlv[4] = 0x10
 	le.PutUint16(tlv[6:8], 32)
 	copy(tlv[8:], digest[:])
-	// Legacy InfiniTime DFU writes its boot magic when flushing the final
-	// partial 200-byte buffer. Avoid the exact-multiple edge case. Trailing
-	// erased bytes are outside the MCUboot image and included in the DFU CRC.
-	if len(image)%200 == 0 {
-		image = append(image, 0xff, 0xff, 0xff, 0xff)
-	}
-	if len(image) > ota.MaxImageSize {
-		return nil, errors.New("DFU padding overlaps MCUboot trailer")
-	}
 	return image, nil
 }
 
-func CRC16(data []byte) uint16 {
-	crc := uint16(0xffff)
-	for _, b := range data {
-		crc ^= uint16(b) << 8
-		for i := 0; i < 8; i++ {
-			if crc&0x8000 != 0 {
-				crc = (crc << 1) ^ 0x1021
-			} else {
-				crc <<= 1
-			}
-		}
-	}
-	return crc
-}
-
 func ZIP(w io.Writer, image []byte, name string) error {
-	if _, err := ota.Validate(bytes.NewReader(image), 0, int64(len(image))); err != nil {
+	validated, err := ota.Validate(bytes.NewReader(image), 0, int64(len(image)))
+	if err != nil {
 		return err
+	}
+	if validated.Size != int64(len(image)) {
+		return errors.New("unexpected image tail")
 	}
 	if name == "" || strings.ContainsAny(name, "/\\") {
 		return errors.New("invalid package basename")
 	}
-	crc := CRC16(image)
-	dat := []byte{0x52, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 1, 0, 0xfe, 0xff, byte(crc), byte(crc >> 8)}
-	manifest := map[string]any{"manifest": map[string]any{
-		"dfu_version": 0.5,
-		"application": map[string]any{
-			"bin_file": name + ".bin", "dat_file": name + ".dat",
-			"init_packet_data": map[string]any{
-				"application_version": uint32(0xffffffff), "device_revision": 0xffff,
-				"device_type": 0x52, "firmware_crc16": crc, "softdevice_req": []int{0xfffe},
-			},
-		},
-	}}
+	manifest := map[string]any{
+		"format": "gopine-update", "protocol": 2,
+		"image": name + ".bin", "sha256": fmt.Sprintf("%x", sha256.Sum256(image)),
+	}
 	manifestJSON, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return err
@@ -230,7 +202,7 @@ func ZIP(w io.Writer, image []byte, name string) error {
 	for _, file := range []struct {
 		name string
 		data []byte
-	}{{name + ".bin", image}, {name + ".dat", dat}, {"manifest.json", manifestJSON}} {
+	}{{name + ".bin", image}, {"manifest.json", manifestJSON}} {
 		entry, err := z.Create(file.name)
 		if err != nil {
 			return err

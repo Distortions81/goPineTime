@@ -6,12 +6,13 @@ that uses the same clock and font rendering code as the watch build.
 
 The latest public release is **0.3.16**, which fixes a Linux Bluetooth pairing
 conflict during firmware updates. The browser updater selects the latest release
-automatically. Current source targets **0.3.21**, a candidate that brings time,
+automatically. Current source targets **0.3.28**, a candidate that brings time,
 weather, music, and supported notifications together under **Settings → Phone**,
 with a saved auto-connect preference and automatic time from the paired phone.
 It also includes in-app firmware updates, charger wake screens, and a saved
 flipped-screen option. Phone connections are opt-in. The candidate adds an ANCS
-client for iPhone notifications; on-device validation remains pending.
+client for iPhone notifications; the user has confirmed notification delivery,
+while completion of the InfiniLink connection remains unverified.
 The [0.3.19 follow-up](docs/releases/0.3.19.md) keeps phone setup awake for two
 minutes and defers settings-save disconnects while pairing is in progress.
 The [0.3.20 follow-up](docs/releases/0.3.20.md) fixes a missed wake signal for
@@ -32,10 +33,56 @@ accepts authenticated feature writes while the final identity exchange is
 pending, preventing a redundant ATT authentication error. Their data stays
 queued until bonding completes and is cleared if security fails. It also
 shows the pairing stage and completed code-check rounds on the PIN screen,
-and retains the last stage in INFO after failure. It is prepared, not flashed.
+and retains the last stage in INFO after failure. The watch received and verified
+0.3.21 through the in-app updater on 2026-10-10; INSTALL and boot/KEEP have not
+been reported.
+
+The [0.3.23 follow-up](docs/releases/0.3.23.md) corrects slow advertising
+on the first failed phone connection and renews the fast window from CONNECT
+PHONE without interrupting pairing. First pairing now follows the reference
+central-triggered flow. A non-secret retained Bluetooth trace and a physical
+pairing probe support diagnosis. The watch received and verified 0.3.23 through
+the in-app updater on 2026-10-10. Physical probes could not discover the watch in
+Phone mode; physical InfiniLink bonding remains unresolved.
+
+The [0.3.24 candidate](docs/releases/0.3.24.md) adds an
+[automated pairing harness](docs/pairing-harness.md), prevents unusable bonds from
+occupying the phone slot, services Bluetooth during hardware settling delays,
+and repairs ANCS retry wakeups. A retained physical trace shows authentication
+failures; full physical InfiniLink pairing remains unverified. The watch received
+and verified 0.3.24 through the in-app updater on 2026-10-10; INSTALL, boot and
+KEEP have not been reported.
+
+The [0.3.25 candidate](docs/releases/0.3.25.md) fixes a reproduced failure to
+advertise after restarting Bluetooth with a saved phone: duplicate controller
+identity entries were rejected by hardware but incorrectly accepted by the
+test harness. It also fixes the bond-save wakeup and adds early-failure traces.
+The watch received and verified 0.3.25 through the in-app updater on 2026-10-10;
+INSTALL, boot and KEEP have not been reported. Physical InfiniLink completion
+remains unverified.
+
+The [0.3.26 candidate](docs/releases/0.3.26.md) restores InfiniTime's immediate
+Battery read, which InfiniLink's development branch uses to finish its connection screen. The user
+has confirmed notification delivery following 0.3.25; InfiniLink itself still
+shows Connecting. A regression now follows the app's single initial read and
+fails with goPine's previous Battery encryption gate. The watch received and
+verified 0.3.26 through the in-app updater on 2026-10-10 with its saved phone
+pairing retained. INSTALL, boot and KEEP have not been reported.
+
+The user's **Home, Charts, Settings** interface instead matches classic
+InfiniLink 1.0.2, which waits for a nonempty firmware revision. The
+[0.3.27 candidate](docs/releases/0.3.27.md) adds the missing Device Information
+service with the actual goPine version. Physical InfiniLink completion remains
+unverified; working Bluetooth alone does not establish that app condition.
+
+The [0.3.28 candidate](docs/releases/0.3.28.md) adds a negotiated two-packet OTA
+pipeline, writes without response where supported, and shorter upload connection
+intervals. Both senders retain compatibility with older protocol-2 receivers and
+report transfer timing. The faster receiver must be installed before its speed
+can be measured on a subsequent transfer.
 
 Use the [browser updater](https://distortions81.github.io/goPineTime/) with goPine
-0.3.13 or newer already installed, or download the application ZIP from
+0.3.22 or newer already installed, or download the application ZIP from
 [GitHub Releases](https://github.com/Distortions81/goPineTime/releases/latest).
 See the [0.3.16 release notes](docs/releases/0.3.16.md),
 [0.3.17 candidate notes](docs/releases/0.3.17.md), and [roadmap](docs/roadmap.md)
@@ -86,7 +133,7 @@ sudo apt install libsdl2-dev
 
 Use the [browser updater](https://distortions81.github.io/goPineTime/) to send
 firmware directly over Bluetooth from a supported browser. It works with goPine
-0.3.13 or newer already on the watch, validates the firmware ZIP, resumes interrupted
+0.3.22 or newer already on the watch, validates the firmware ZIP, resumes interrupted
 transfers, and waits for on-watch **INSTALL** and **KEEP**. See the
 [browser updater guide](docs/web-updater.md) for compatibility and local builds.
 
@@ -94,14 +141,16 @@ For **Bluetooth OTA with on-watch confirmation**, see [OTA setup](docs/ota.md).
 Download the firmware ZIP from [GitHub Releases](https://github.com/Distortions81/goPineTime/releases)
 to update without compiling. Releases are built and checked automatically from
 version tags; [release instructions](docs/ota.md#automated-tagged-releases) describe publishing.
-Once the watch runs 0.3.13 or later, use
-`bash scripts/ota-update.sh VERSION --direct --web` for local browser controls
+Once the watch runs 0.3.22 or later, use
+`bash scripts/ota-update.sh VERSION --web` for local browser controls
 and updates inside goPine. The updater prepares and checks the package first;
 the watch shows progress and waits for **Install**, then **KEEP** after reboot.
-Older goPine versions need one recovery upload without `--direct`.
-Both routes use stock InfiniTime MCUboot images packaged in Nordic Legacy DFU
-ZIPs. The in-app receiver uses a goPine BLE service with the browser or Linux updater;
-existing phone DFU clients still use recovery. There is no signing certificate. A one-time wired setup is needed
+Native OTA protocol 2 acknowledges durable flash bytes through notifications
+and allows payloads up to 236 bytes at MTU 247. Legacy recovery upload tools,
+protocol-1 compatibility and Nordic DFU packages are removed. Emergency recovery
+and trial rollback remain in the bootloader. The first transition from 0.3.21
+uses the preserved local in-app sender; subsequent updates use protocol 2.
+See the [0.3.22 notes](docs/releases/0.3.22.md). A one-time wired setup is needed
 when migrating from the standalone build below.
 
 Build a **standalone, wired-only** image with the project's PineTime target. The
@@ -194,7 +243,10 @@ Brief Bluetooth disconnects can resume within the same transfer. The session
 expires after ten minutes without transfer activity; Cancel or an alarm ends it
 with the current firmware still running. At least 20% battery or external power
 is required. Normal phone connections pause when this update mode opens; the
-0.3.17 candidate resumes enabled auto-connect after leaving the update screens.
+candidate resumes enabled auto-connect after leaving the update screens. The
+0.3.27 candidate reserves three live Bluetooth slots in update mode: both saved
+devices can reconnect while the updater uses the third. Status subscriptions do
+not claim a transfer; the sender that starts or resumes it owns the writes.
 Versions through 0.3.12 opened InfiniTime recovery after the hold.
 
 An unconfirmed OTA build shows **KEEP / REVERT** instead. The simulator supports
@@ -245,8 +297,9 @@ down; no sensor polling has been added for weather.
 **Apps → Weather** shows current conditions and five forecast days received from
 the phone, retaining them after disconnect until reboot. Tap **C/F** to change
 units. Receipt age is displayed, with a warning after 24 hours; it does not claim
-the age of the provider's observation. InfiniLink can push weather on foreground
-connection and location/app refresh, but its periodic background trigger depends
+the age of the provider's observation. InfiniLink's newer development branch can
+push weather on foreground connection and location/app refresh; classic 1.0.2
+has no weather sender. The newer app's periodic background trigger depends
 on motion notifications that goPine does not send. Unmodified Gadgetbridge's
 firmware-version gate currently prevents weather delivery to goPine 0.3.x.
 

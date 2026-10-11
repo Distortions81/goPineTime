@@ -15,8 +15,44 @@ type fakePhoneRadio struct {
 	changed, draining bool
 	commands          []byte
 	generation        uint32
+	setups            int
 	commandError      error
 }
+
+type twoDeviceRadio struct {
+	fakePhoneRadio
+	peers, trusted int
+}
+
+func (r *twoDeviceRadio) PeerCount() int        { return r.peers }
+func (r *twoDeviceRadio) TrustedPeerCount() int { return r.trusted }
+
+func TestPhoneStatusTracksBothDevicesIndependentlyOfMusic(t *testing.T) {
+	now := time.Now()
+	u := phoneUI(now, phoneConnected)
+	r := &twoDeviceRadio{peers: 1, trusted: 1}
+	r.report(music.LinkMusicReady, true, 1)
+	c := timeSyncController{radio: r}
+	c.update(&u, now, 80)
+	u.openPhone()
+	r.peers = 2
+	c.update(&u, now.Add(time.Second), 80)
+	if u.phone.status != "Securing connection" || !u.phoneSetupActive(now.Add(time.Second)) || u.phone.music.Generation != 1 {
+		t.Fatal("second pairing lost setup protection or the first music source")
+	}
+	r.trusted = 2
+	c.update(&u, now.Add(2*time.Second), 80)
+	if u.phone.status != "2 devices connected" || u.phoneSetupActive(now.Add(2*time.Second)) {
+		t.Fatal("second authentication did not update connection status")
+	}
+	r.peers, r.trusted = 1, 1
+	c.update(&u, now.Add(3*time.Second), 80)
+	if u.phone.status != "Connected" || r.stops != 0 || u.phone.music.Generation != 1 {
+		t.Fatal("second disconnect interrupted the first device")
+	}
+}
+
+func (r *fakePhoneRadio) PhoneSetup() { r.setups++ }
 
 func (r *fakePhoneRadio) UpdateBattery(value uint8) { r.battery = value }
 
@@ -341,5 +377,27 @@ func TestRepeatedConnectDoesNotRestartSharedRadio(t *testing.T) {
 	}
 	if r.starts != 1 || r.stops != 0 || r.window != 0 || !u.phoneAuto {
 		t.Fatal("repeated Connect reset shared connection")
+	}
+}
+
+func TestPhoneSetupRefreshesExistingAdvertisingWithoutRestart(t *testing.T) {
+	now := time.Now()
+	u := phoneUI(now, phoneConnected)
+	r := &fakePhoneRadio{}
+	c := timeSyncController{radio: r}
+	c.update(&u, now, 80)
+	u.openPhone()
+	c.update(&u, now.Add(time.Second), 80)
+	if r.setups != 1 || r.starts != 1 || r.stops != 0 {
+		t.Fatal("opening Phone did not renew advertising in place", r)
+	}
+	u.handlePhone(inputEvent{Kind: inputTap, X: 120, Y: 154}, now.Add(2*time.Second), firmwareConfirmed)
+	c.update(&u, now.Add(2*time.Second), 80)
+	if r.setups != 2 || r.starts != 1 || r.stops != 0 {
+		t.Fatal("CONNECT PHONE restarted the security exchange", r)
+	}
+	c.update(&u, now.Add(3*time.Second), 80)
+	if r.setups != 2 {
+		t.Fatal("setup refresh repeated every tick")
 	}
 }

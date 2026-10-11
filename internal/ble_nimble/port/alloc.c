@@ -5,8 +5,17 @@
 #include <string.h>
 
 typedef struct __attribute__((aligned(8))) block { size_t size; struct block *next; int used; } block;
-static union { uint64_t align; unsigned char bytes[8192]; } arena;
+// Pinned GATT registration is the only dynamic NimBLE allocation. The real
+// host harness peaks at 3056 bytes even with 64-bit pointers, three ACL slots
+// and both companions active; retain at least 2KiB of tested arena headroom.
+#define GOPINE_BLE_ARENA_SIZE 5120
+static union { uint64_t align; unsigned char bytes[GOPINE_BLE_ARENA_SIZE]; } arena;
 static block *head;
+#ifdef GOPINE_BLE_ALLOC_AUDIT
+static size_t allocation_peak;
+size_t gopine_ble_alloc_peak(void) {return allocation_peak;}
+size_t gopine_ble_alloc_capacity(void) {return sizeof(arena.bytes);}
+#endif
 void *gopine_ble_malloc(size_t n) {
     if (!n || n > sizeof(arena.bytes) - sizeof(block)) return NULL;
     n = (n + 7) & ~(size_t)7;
@@ -19,6 +28,10 @@ void *gopine_ble_malloc(size_t n) {
             b->next = tail; b->size = n;
         }
         b->used = 1;
+#ifdef GOPINE_BLE_ALLOC_AUDIT
+        size_t end=(unsigned char*)(b+1)-arena.bytes+b->size;
+        if(end>allocation_peak)allocation_peak=end;
+#endif
         return b + 1;
     }
     return NULL;

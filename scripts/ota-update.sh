@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prepare dependencies before asking the user to enter the short recovery window.
+# Prepare dependencies before asking the user to enter the watch connection window.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # Optional, local-only toolchain/cache paths, like the caller's shell profile.
@@ -13,11 +13,8 @@ else
   if [[ ! -x $python_bin ]]; then
     python3 -m venv build/ota/venv
   fi
-  if ! "$python_bin" -c 'import pexpect' 2>/dev/null; then
-    "$python_bin" -m pip install --disable-pip-version-check pexpect==4.9.0 ptyprocess==0.7.0
-  fi
 fi
-if [[ " $* " == *" --direct "* ]] && ! "$python_bin" -c 'import bleak' 2>/dev/null; then
+if ! "$python_bin" -c 'import bleak' 2>/dev/null; then
   "$python_bin" -m pip install --disable-pip-version-check bleak==0.22.3
 fi
 exec "$python_bin" -u scripts/ota_update.py "$@"

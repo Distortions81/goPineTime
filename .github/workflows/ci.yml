@@ -34,6 +34,14 @@ jobs:
         run: python3 scripts/test_ota_update.py
       - name: Test direct Bluetooth sender without a watch
         run: python3 scripts/test_direct_upload.py
+      - name: Test stalled Bluetooth sender operations
+        run: python3 scripts/test_direct_upload_timeouts.py
+      - name: Test exclusive Bluetooth target sessions
+        run: python3 scripts/test_ble_session.py
+      - name: Test retained pairing trace decoder
+        run: python3 scripts/test_pairing_probe.py
+      - name: Test automated pairing harness without Bluetooth
+        run: python3 scripts/test_pairing_harness.py
       - name: Test release assets
         run: python3 scripts/test_release_assets.py
       - name: Test browser updater and published release selection
@@ -59,7 +67,7 @@ jobs:
           install-binaryen: "false"
       - name: Build PineTime firmware
         run: tinygo build -target=./targets/pinetime-gopine.json -ldflags="-X main.firmwareTime=00:00:00" -o goPine.hex .
-      - name: Build InfiniTime-compatible OTA package
+      - name: Build native goPine OTA package
         env:
           FIRMWARE_TIME: "00:00:00"
         run: bash scripts/build-ota.sh 0.2.0

@@ -105,6 +105,6 @@ jobs:
             gh release create "$GITHUB_REF_NAME" --verify-tag --draft \
               --title "goPine ${GITHUB_REF_NAME#v}" --notes-file INSTALL.md
           fi
-          gh release upload "$GITHUB_REF_NAME" gopine-dfu-*.zip \
+          gh release upload "$GITHUB_REF_NAME" gopine-update-*.zip \
             gopine-resources-*.json build-info.json INSTALL.md SHA256SUMS --clobber
           gh release edit "$GITHUB_REF_NAME" --draft=false
