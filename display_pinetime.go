@@ -26,6 +26,7 @@ type pineTimeDisplay struct {
 	screenOn          bool
 	lcdPower          lcdPower
 	touchWake         bool
+	brightness        uint8
 	sleepAt           time.Time
 	touch             touchController
 	touchEvents       touchQueue
@@ -84,7 +85,7 @@ func openDisplay() (clockDisplay, error) {
 		FrameRate:  st7789.FRAMERATE_39,
 		VSyncLines: 32,
 	})
-	setBacklight(true)
+	setBacklight(true, brightnessHigh)
 
 	chargeIndicationPin.Configure(machine.PinConfig{Mode: machine.PinInput})
 	powerPresencePin.Configure(machine.PinConfig{Mode: machine.PinInput})
@@ -269,6 +270,15 @@ func (d *pineTimeDisplay) SetTouchWake(enabled bool) {
 	}
 }
 
+func (d *pineTimeDisplay) SetBrightness(level uint8) {
+	level = validBrightness(level)
+	if d.brightness == level {
+		return
+	}
+	d.brightness = level
+	setBacklight(d.screenOn, level)
+}
+
 func (d *pineTimeDisplay) Wake() error {
 	d.touchEvents.clear()
 	d.touch.tracker.cancelContact()
@@ -313,9 +323,9 @@ func (d *pineTimeDisplay) setScreen(on bool) error {
 		// SLPOUT also requires 5 ms before another LCD command, including
 		// when touch-to-wake is on and touch.Wake returns immediately.
 		pauseWithRadio(6 * time.Millisecond)
-		setBacklight(true)
+		setBacklight(true, d.brightness)
 	} else {
-		setBacklight(false)
+		setBacklight(false, d.brightness)
 		if err := d.lcdPower.sleep(time.Now, pauseWithRadio, d.DeviceOf.Sleep); err != nil {
 			return err
 		}
@@ -369,11 +379,11 @@ func disconnectInput(pin machine.Pin) {
 	nrf.P0.PIN_CNF[pin].Set(nrf.GPIO_PIN_CNF_INPUT_Disconnect << nrf.GPIO_PIN_CNF_INPUT_Pos)
 }
 
-func setBacklight(on bool) {
-	// Keep the unused channels off even when entering from a bootloader.
-	machine.LCD_BACKLIGHT_LOW.High()
-	machine.LCD_BACKLIGHT_MID.High()
-	machine.LCD_BACKLIGHT_HIGH.Set(!on)
+func setBacklight(on bool, level uint8) {
+	channels := backlightChannels(level, on)
+	machine.LCD_BACKLIGHT_LOW.Set(channels&1 == 0)
+	machine.LCD_BACKLIGHT_MID.Set(channels&2 == 0)
+	machine.LCD_BACKLIGHT_HIGH.Set(channels&4 == 0)
 }
 
 func (d *pineTimeDisplay) Close() error {

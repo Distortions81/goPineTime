@@ -31,7 +31,7 @@ func forgettableBond(status int) bool {
 }
 
 func (u *watchUI) pairingVisible() bool {
-	return u.pairing != nil && u.pairing.code != 0 && !u.timers.active && u.page != pageTrial
+	return !u.updateExclusive() && u.pairing != nil && u.pairing.code != 0 && !u.timers.active && u.page != pageTrial
 }
 func (u *watchUI) openPairingSettings() {
 	if u.pairing == nil {
@@ -162,7 +162,11 @@ func (u *watchUI) drawPairing(d canvas) {
 func (u *watchUI) drawPairingSettings(d canvas, now time.Time) {
 	_ = now
 	p := u.pairing
-	centered(d, &uifont.Bold18, 29, "PAIRING", white)
+	centered(d, &uifont.Bold18, 29, "DEVICES", white)
+	pairAction := "Tap Pair a device"
+	if !u.phoneAuto && (u.phone == nil || u.phone.mode == phoneOff) {
+		pairAction = "Turn on Bluetooth"
+	}
 	status := "Pairing not checked"
 	switch p.status {
 	case -3:
@@ -182,7 +186,7 @@ func (u *watchUI) drawPairingSettings(d canvas, now time.Time) {
 		centered(d, &uifont.Regular18, 147, pairingDiagnosticCodes(p.diagnostic), muted)
 		if !forgettableBond(p.status) {
 			centered(d, &uifont.Regular18, 185, pairingStageText(p.progress), muted)
-			centered(d, &uifont.Regular18, 212, "Use CONNECT PHONE", muted)
+			centered(d, &uifont.Regular18, 212, pairAction, muted)
 			return
 		}
 	} else {
@@ -192,15 +196,15 @@ func (u *watchUI) drawPairingSettings(d canvas, now time.Time) {
 			} else if p.note == "Forget on devices too" {
 				centered(d, &uifont.Regular18, 120, "Forget this watch in", muted)
 				centered(d, &uifont.Regular18, 147, "each device's settings", muted)
-				centered(d, &uifont.Regular18, 185, "Use CONNECT PHONE", muted)
+				centered(d, &uifont.Regular18, 185, pairAction, muted)
 				centered(d, &uifont.Regular18, 212, "to pair again", muted)
 			} else {
-				text := "Use CONNECT PHONE"
+				text := pairAction
 				if p.progress != 0 {
 					text = pairingStageText(p.progress)
 				}
 				centered(d, &uifont.Regular18, 120, text, muted)
-				centered(d, &uifont.Regular18, 147, "on the Phone screen", muted)
+				centered(d, &uifont.Regular18, 147, "in Bluetooth settings", muted)
 				note := p.note
 				if note == "" {
 					note = "Then pair in your app"
@@ -234,7 +238,7 @@ func pairingStageText(progress uint16) string {
 		return "Starting pairing"
 	case 2:
 		if progress&255 == 0 {
-			return "Waiting for phone code"
+			return "Waiting for device code"
 		}
 		return "Checking code " + decimal(int(progress&31)) + "/20"
 	case 3:
@@ -246,7 +250,7 @@ func pairingStageText(progress uint16) string {
 	case 6:
 		return "Pairing completed"
 	default:
-		return "Waiting for phone"
+		return "Waiting for device"
 	}
 }
 
@@ -259,7 +263,7 @@ func pairingFailureText(value uint32) string {
 		case 0x404, 0x504:
 			return "Code did not match"
 		case 0x405, 0x505:
-			return "Phone rejected pairing"
+			return "Device rejected pairing"
 		case 19: // BLE_HS_ETIMEOUT_HCI
 			return "BLE command timed out"
 		case 13: // BLE_HS_ETIMEOUT
@@ -276,7 +280,7 @@ func pairingFailureText(value uint32) string {
 	case 0x205, 0x206:
 		return "Saved key rejected"
 	case 0x213:
-		return "Phone disconnected"
+		return "Device disconnected"
 	default:
 		return "Connection interrupted"
 	}

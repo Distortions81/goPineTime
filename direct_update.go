@@ -34,19 +34,35 @@ type transferState struct {
 	percent          int
 	version, message string
 }
+
+// Allocated only when OTA starts, then retained for retries and later sessions.
+// Message storage stays independent: the inbox may remain live during an update.
+type updateWorkspace struct {
+	receiver ota.Receiver
+	packet   [244]byte
+}
 type directUpdater struct {
+	*updateWorkspace
 	sync      *timeSyncController
 	flash     updateFlash
-	receiver  ota.Receiver
-	packet    [244]byte
 	openFlash func() (updateFlash, error)
 	confirmed func() bool
 	powerOK   func() bool
 	reboot    func() error
 }
 
+// Exclusive from entry through verification/Install and retryable errors.
+// Leave timers intact so an elapsed timer can be delivered after cancellation.
+func (u *watchUI) updateExclusive() bool {
+	return u.page == pageTransfer && u.transfer != nil && u.transfer.open
+}
+
 func (u *watchUI) beginDirectUpdate(now time.Time) {
 	u.cancelHold()
+	u.powerNotice = false
+	if u.notifications != nil {
+		u.notifications.buzzUntil = time.Time{}
+	}
 	if u.transfer == nil {
 		u.transfer = &transferState{}
 	}
@@ -54,8 +70,11 @@ func (u *watchUI) beginDirectUpdate(now time.Time) {
 	u.page = pageTransfer
 }
 func (d *directUpdater) release() error {
-	if err := d.receiver.Cancel(); err != nil {
-		return err
+	if d.updateWorkspace != nil {
+		if err := d.receiver.Cancel(); err != nil {
+			return err
+		}
+		clear(d.packet[:])
 	}
 	if d.flash != nil {
 		d.flash.Close()
@@ -76,9 +95,11 @@ func (d *directUpdater) publish(u *watchUI, r directUpdateRadio) {
 	if u.transfer.phase == updateFailed {
 		status[2] = 1
 	}
-	binary.LittleEndian.PutUint32(status[4:], d.receiver.Total)
-	binary.LittleEndian.PutUint32(status[8:], d.receiver.Offset)
-	binary.LittleEndian.PutUint32(status[12:], d.receiver.Session)
+	if d.updateWorkspace != nil {
+		binary.LittleEndian.PutUint32(status[4:], d.receiver.Total)
+		binary.LittleEndian.PutUint32(status[8:], d.receiver.Offset)
+		binary.LittleEndian.PutUint32(status[12:], d.receiver.Session)
+	}
 	r.UpdateStatus(status)
 }
 
@@ -148,6 +169,9 @@ func (d *directUpdater) tick(u *watchUI, now time.Time, power powerStatus) {
 			return
 		}
 		d.sync.running, d.sync.directMode = true, true
+	}
+	if d.updateWorkspace == nil {
+		d.updateWorkspace = &updateWorkspace{}
 	}
 	// The main loop pumps host callbacks through sync.update after this frame
 	// returns. Connection/discovery must not run beneath OTA packet/flash work.
@@ -236,6 +260,10 @@ func (d *directUpdater) install(u *watchUI) {
 	}
 	if !d.confirmed() {
 		d.fail(u, "Tap KEEP before update")
+		return
+	}
+	if d.updateWorkspace == nil {
+		d.fail(u, "Update not verified")
 		return
 	}
 	if err := d.receiver.Commit(true); err != nil {

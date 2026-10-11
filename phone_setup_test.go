@@ -64,7 +64,10 @@ func TestPhoneSetupStaysAwakeThenResumesNormalSleep(t *testing.T) {
 		d.sleepAt = d.now.Add(15 * time.Second)
 		u := newWatchUI(firmwareConfirmed)
 		u.openPhone()
-		u.handle(inputEvent{Kind: inputTap, X: 120, Y: 154}, d.now, firmwareConfirmed, powerStatus{})
+		u.handle(inputEvent{Kind: inputTap, X: 120, Y: 110}, d.now, firmwareConfirmed, powerStatus{})
+		if u.page == pageBatteryConfirm {
+			u.handle(inputEvent{Kind: inputTap, X: 177, Y: 210}, d.now, firmwareConfirmed, powerStatus{})
+		}
 		r := &fakePhoneRadio{}
 		r.report(link, false, 1)
 		c := timeSyncController{radio: r}
@@ -94,7 +97,10 @@ func TestPhoneSetupDefersSettingsSaveBeforeAndDuringSecurity(t *testing.T) {
 	u := newWatchUI(firmwareConfirmed)
 	p := loadSettings(&u, now, j)
 	u.openPhone()
-	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 154}, now, firmwareConfirmed, powerStatus{})
+	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 110}, now, firmwareConfirmed, powerStatus{})
+	if u.page == pageBatteryConfirm {
+		u.handle(inputEvent{Kind: inputTap, X: 177, Y: 210}, now, firmwareConfirmed, powerStatus{})
+	}
 	r := &fakePhoneRadio{}
 	c := timeSyncController{radio: r}
 	c.update(&u, now, 80)
@@ -127,7 +133,10 @@ func TestPhoneSetupWaitingSaveResumesAtBoundedDeadline(t *testing.T) {
 	u := newWatchUI(firmwareConfirmed)
 	p := loadSettings(&u, now, j)
 	u.openPhone()
-	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 154}, now, firmwareConfirmed, powerStatus{})
+	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 110}, now, firmwareConfirmed, powerStatus{})
+	if u.page == pageBatteryConfirm {
+		u.handle(inputEvent{Kind: inputTap, X: 177, Y: 210}, now, firmwareConfirmed, powerStatus{})
+	}
 	r := &fakePhoneRadio{}
 	c := timeSyncController{radio: r}
 	c.update(&u, now, 80)
@@ -147,7 +156,10 @@ func TestSecondDevicePairingDefersSettingsSaveWithFirstDevicePlaying(t *testing.
 	u := newWatchUI(firmwareConfirmed)
 	p := loadSettings(&u, now, j)
 	u.openPhone()
-	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 154}, now, firmwareConfirmed, powerStatus{})
+	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 110}, now, firmwareConfirmed, powerStatus{})
+	if u.page == pageBatteryConfirm {
+		u.handle(inputEvent{Kind: inputTap, X: 177, Y: 210}, now, firmwareConfirmed, powerStatus{})
+	}
 	r := &twoDeviceRadio{peers: 2, trusted: 1}
 	r.report(music.LinkMusicReady, true, 1)
 	c := timeSyncController{radio: r}

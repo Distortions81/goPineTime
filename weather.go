@@ -208,7 +208,7 @@ func (u *watchUI) drawWeather(d canvas, now time.Time) {
 	if u.page == pageWeather {
 		if !w.cache.HasCurrent {
 			centered(d, &uifont.Regular18, 94, "No weather yet", white)
-			centered(d, &uifont.Regular18, 129, "Settings > Phone", muted)
+			centered(d, &uifont.Regular18, 129, "Settings > Bluetooth", muted)
 		} else {
 			v := &w.cache.Current
 			if textVisible(d, &uifont.Regular18, 60, "") {

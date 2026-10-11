@@ -77,3 +77,34 @@ static void mode_payload_lifecycle(void) {
     assert(!gopine_ble_forget_phone());
     puts("100 Phone/weather/OTA payload transitions: busy starts, stale status, per-peer reset and wake isolation passed");
 }
+
+static void mode_payload_budget(void) {
+    // These payload types contain only fixed-width scalar data, not pointers.
+    // Measure alternative queue sizes without changing the active protocol.
+    struct queue4 { struct update_packet packets[4]; uint8_t head,count; bool in_flight; };
+    struct queue10 { struct update_packet packets[10]; uint8_t head,count; bool in_flight; };
+    struct queue20 { struct update_packet packets[20]; uint8_t head,count; bool in_flight; };
+    fprintf(stdout,"Payload budget: phone=%zu shared=%zu OTA2=%zu OTA4=%zu OTA10=%zu OTA20=%zu bytes\n",
+           sizeof(mode_payload.phone),sizeof(mode_payload),sizeof(struct update_mailbox),
+           sizeof(struct queue4),sizeof(struct queue10),sizeof(struct queue20));
+    assert(sizeof(struct queue4)<=sizeof(mode_payload)+16);
+}
+
+static void ota_ignores_suspended_notification_wakeups(void) {
+    const uint8_t address[]={3,5,7,9,11,0xce};
+    uint8_t time[10]={0},out[ANCS_PACKET_SIZE];
+    assert(!gopine_ble_start_phone(time,80,0));gopine_ble_poll();
+    connect_peer_on(1,address);mode_payload_quiet();
+    // Start a client to create its session-clear record. Stop invalidates the
+    // pending GATT callback, but preserves that clear until normal work resumes.
+    gopine_ancs_poll(1,true);
+    gopine_ble_stop();gopine_ble_poll();gopine_ble_poll();assert(!gopine_ble_busy());
+    assert(gopine_ancs_updates());
+    assert(!gopine_ble_start_update(80));gopine_ble_poll();
+    for(unsigned i=0;i<8 && gopine_ble_host_work_pending();i++)gopine_ble_poll();
+    gopine_ble_ack_updates();
+    assert(gopine_ancs_updates() && !gopine_ble_updates());
+    while(gopine_ble_take_apple_notification(out)){}
+    gopine_ble_stop();gopine_ble_poll();gopine_ble_poll();assert(!gopine_ble_busy());
+    puts("OTA exclusive mode: suspended ANCS session-clear cannot busy-wake transfer loop");
+}

@@ -22,10 +22,15 @@ static inline uint32_t ancs_u32(const uint8_t *p) {
     return (uint32_t)p[0] | (uint32_t)p[1]<<8 | (uint32_t)p[2]<<16 | (uint32_t)p[3]<<24;
 }
 static inline unsigned ancs_u16(const uint8_t *p) { return p[0] | (unsigned)p[1]<<8; }
-static inline void ancs_store(struct ancs_mailbox *m, const uint8_t *record) {
+// Reserve only after a complete response validates. Storage belongs to this
+// peer's mailbox until Go takes it; no transient full record is needed.
+static inline uint8_t *ancs_reserve(struct ancs_mailbox *m) {
     if(m->count==2) { m->head=(m->head+1)%2; m->count--; }
-    memcpy(m->records[(m->head+m->count)%2],record,ANCS_RECORD_SIZE);
-    m->count++;
+    uint8_t *record=m->records[(m->head+m->count)%2];
+    m->count++; return record;
+}
+static inline void ancs_store(struct ancs_mailbox *m, const uint8_t *record) {
+    memcpy(ancs_reserve(m),record,ANCS_RECORD_SIZE);
 }
 static inline void ancs_clear(struct ancs_mailbox *m) {
     memset(m,0,sizeof(*m)); m->clear=true;
@@ -62,10 +67,10 @@ static inline int ancs_response_feed(struct ancs_response *r,struct ancs_mailbox
     if(r->size<end) return 0;
     if(r->size!=end) return -1;
     if(!r->removed) {
-        uint8_t record[ANCS_RECORD_SIZE]={0};
+        uint8_t *record=ancs_reserve(m);
+        memset(record,0,ANCS_RECORD_SIZE);
         memcpy(record,r->data+1,4); record[4]=r->event; record[5]=r->category; record[6]=r->flags;
         memcpy(record+7,r->data+8,title); memcpy(record+47,r->data+at+3,body);
-        ancs_store(m,record);
     }
     memset(r,0,sizeof(*r)); return 1;
 }

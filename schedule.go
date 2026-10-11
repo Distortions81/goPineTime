@@ -37,6 +37,12 @@ func (s wakeSchedule) delay() time.Duration {
 
 func nextLoopDelay(now time.Time, u *watchUI, nextPower time.Time, awake bool) time.Duration {
 	schedule := newWakeSchedule(now, noDeadlineDelay)
+	if u.updateExclusive() {
+		schedule.by(nextPower)
+		schedule.by(u.transfer.expires)
+		schedule.after(50 * time.Millisecond)
+		return schedule.delay()
+	}
 	if awake {
 		schedule.by(nextPower)
 		schedule.after(nextMinuteDelay(u.clock.Now(now)))
@@ -61,10 +67,6 @@ func nextLoopDelay(now time.Time, u *watchUI, nextPower time.Time, awake bool) t
 		schedule.by(u.phone.setupUntil)
 	}
 	u.scheduleTimers(&schedule, awake)
-	if u.page == pageTransfer && u.transfer != nil && u.transfer.open {
-		schedule.by(u.transfer.expires)
-		schedule.after(50 * time.Millisecond)
-	}
 	if n := u.notifications; n != nil && now.Before(n.buzzUntil) {
 		schedule.by(n.buzzUntil)
 	}

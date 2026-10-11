@@ -1,6 +1,8 @@
 # Clock tools and persistence (0.3.0)
 
-Swipe right from the clock to open Clock Tools. Swipe left still opens Settings.
+Swipe right from the clock to open **Apps**. Swipe left opens **Settings**.
+Apps groups Alarms, Stopwatch, Timer, Music, and Messages; Weather is temporarily
+disabled. The Timer button opens the countdown controls described below.
 Back or swipe-right returns to the parent screen. Sleep discards an unfinished
 alarm or countdown edit. Stopwatch and countdown continue while navigating or
 while the screen is off.
@@ -22,6 +24,8 @@ the available columns instead of using tiny text.
   Dismiss, swipe-right, or the side button stops it. Alarm alerts also offer
   Snooze 5 Min. An alert stops after one minute; simultaneous alerts are queued.
   An alert cancels time sync, editor drafts, and an armed firmware-update hold.
+  Once firmware update mode opens, alerts are deferred until it closes; an
+  overdue alarm or countdown cannot interrupt a transfer or verification.
 
 Calendar alarms follow displayed local time. A clock change reschedules them
 from the new time without ringing every skipped alarm. There is no timezone or

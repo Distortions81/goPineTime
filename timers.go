@@ -137,6 +137,9 @@ func (t *timerState) poll(now, local time.Time, clockInitialized bool) {
 }
 
 func (u *watchUI) tickTimers(now time.Time, state updateState) bool {
+	if u.updateExclusive() {
+		return false
+	}
 	t := &u.timers
 	u.reconcileTimers(now)
 	local := u.clock.Now(now)

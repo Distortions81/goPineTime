@@ -22,8 +22,9 @@ type frameRenderer struct {
 }
 
 type stripCanvas struct {
-	bitmap pixel.Image[pixel.RGB444BE]
-	y      int16
+	bitmap    pixel.Image[pixel.RGB444BE]
+	y         int16
+	lightMode bool
 }
 
 func (r *frameRenderer) invalidate() { r.valid = 0 }

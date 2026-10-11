@@ -88,20 +88,7 @@ func (u *watchUI) handleTimerTap(e inputEvent, now time.Time) {
 	t := &u.timers
 	switch u.page {
 	case pageApps:
-		switch {
-		case inRect(e, 150, 0, 240, 42):
-			u.openInbox()
-		case inRect(e, 16, 42, 224, 82):
-			u.page = pageAlarms
-		case inRect(e, 16, 88, 224, 128):
-			u.page = pageStopwatch
-		case inRect(e, 16, 134, 224, 174):
-			u.page = pageCountdown
-		case inRect(e, 12, 180, 114, 220):
-			u.openWeather()
-		case inRect(e, 126, 180, 228, 220):
-			u.openMusic()
-		}
+		u.handleAppsTap(e)
 	case pageAlarms:
 		a := &t.alarms[u.alarmIndex]
 		switch {
@@ -192,13 +179,7 @@ func (u *watchUI) drawTimers(d canvas, now time.Time) {
 	t := &u.timers
 	switch u.page {
 	case pageApps:
-		writeLine(d, &uifont.Bold18, 60, 29, "APPS", white)
-		writeLine(d, &uifont.Regular18, 166, 29, "INBOX", accent)
-		clockControl(d, 16, 42, 208, 40, "ALARMS", card)
-		clockControl(d, 16, 88, 208, 40, "STOPWATCH", card)
-		clockControl(d, 16, 134, 208, 40, "COUNTDOWN", card)
-		clockControl(d, 12, 180, 102, 40, "WEATHER", card)
-		clockControl(d, 126, 180, 102, 40, "MUSIC", card)
+		drawApps(d)
 	case pageAlarms:
 		a := t.alarms[u.alarmIndex]
 		centered(d, &uifont.Bold18, 29, "ALARMS", white)

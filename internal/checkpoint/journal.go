@@ -52,6 +52,19 @@ type Settings struct {
 	TouchWake        bool
 	FlipScreen       bool
 	PhoneAuto        bool
+	Display          uint8 // Bit 0: light theme. Bits 1–2: High(0), Low(1), Medium(2).
+}
+
+func (s Settings) LightMode() bool   { return s.Display&1 != 0 }
+func (s Settings) Brightness() uint8 { return s.Display >> 1 }
+func (s *Settings) SetDisplay(light bool, brightness uint8) {
+	if brightness > 2 {
+		brightness = 0
+	}
+	s.Display = brightness << 1
+	if light {
+		s.Display |= 1
+	}
 }
 
 // Runtime timestamps are local calendar fields encoded as Unix milliseconds,
@@ -91,7 +104,7 @@ func (r Runtime) valid() bool {
 }
 
 func (s Settings) valid() bool {
-	if s.CountdownSeconds == 0 || s.CountdownSeconds >= 24*60*60 {
+	if s.CountdownSeconds == 0 || s.CountdownSeconds >= 24*60*60 || s.Display > 5 {
 		return false
 	}
 	for _, a := range s.Alarms {
@@ -293,6 +306,8 @@ func encode(r Record) [RecordSize]byte {
 	if r.Settings.PhoneAuto {
 		b[146] = 1
 	}
+	// A reserved zero byte gives existing records dark theme and high brightness.
+	b[147] = r.Settings.Display
 	binary.LittleEndian.PutUint32(b[RecordSize-8:RecordSize-4], ieeecrc.Checksum(b[:RecordSize-8]))
 	binary.LittleEndian.PutUint32(b[RecordSize-4:], recordCommit)
 	return b
@@ -326,8 +341,9 @@ func decode(b *[RecordSize]byte) (Record, bool) {
 	r.Settings.TouchWake = b[144] == 1
 	r.Settings.FlipScreen = b[145] == 1
 	r.Settings.PhoneAuto = b[146] == 1
-	valid = valid && b[60]>>4 == 0 && b[144] <= 1 && b[145] <= 1 && b[146] <= 1
-	for _, v := range b[147 : RecordSize-8] {
+	r.Settings.Display = b[147]
+	valid = valid && b[60]>>4 == 0 && b[144] <= 1 && b[145] <= 1 && b[146] <= 1 && b[147] <= 5
+	for _, v := range b[148 : RecordSize-8] {
 		valid = valid && v == 0
 	}
 	valid = valid && (!r.HasSettings || r.Settings.valid()) && (!r.HasRuntime || (r.HasSettings && r.Runtime.valid()))

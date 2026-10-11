@@ -69,13 +69,21 @@ if $bootstrap; then
     -ldflags="-X main.firmwareTime=$firmware_time -X main.firmwareDate=$firmware_date -X main.firmwareVersion=$version" \
     -o "$output/gopine-recovery-setup-$version.hex" .
 fi
-"$tinygo_bin" build -target="$target" \
+allocation_args=()
+if [[ $target == *-ble.json ]]; then
+  allocation_args=(-print-allocs='(ota.*Receiver|ota.ValidateWithScratch|notifications.*Inbox)')
+fi
+if ! "$tinygo_bin" build -target="$target" "${allocation_args[@]}" \
   -ldflags="-X main.firmwareTime=$firmware_time -X main.firmwareDate=$firmware_date -X main.firmwareVersion=$version" \
-  -o "$output/gopine-$version.elf" .
+  -o "$output/gopine-$version.elf" . > "$output/gopine-allocations-$version.log" 2>&1; then
+  cat "$output/gopine-allocations-$version.log" >&2
+  exit 1
+fi
 if [[ $target == *-ble.json ]]; then
   # A successful link does not bound TinyGo's indirect/recursive task stack.
   python3 scripts/check-resources.py "$output/gopine-$version.elf" \
     --ble-stack-usage build/ble/stack-usage.txt \
+    --allocations "$output/gopine-allocations-$version.log" \
     --report "$output/gopine-resources-$version.json"
 fi
 go run ./cmd/otapack -elf "$output/gopine-$version.elf" -version "$version" \

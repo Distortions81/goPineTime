@@ -72,6 +72,49 @@ func directFixture() (*watchUI, *directUpdater, *fakeUpdateRadio, *fakeUpdateFla
 	return &u, d, radio, f, reboots
 }
 
+func TestUpdateWorkspaceIsLazyAndRecycledWithoutTouchingInbox(t *testing.T) {
+	u, d, radio, _, _ := directFixture()
+	now, power := time.Now(), powerStatus{Percent: 80}
+	u.transfer.open = false
+	u.openInbox()
+	u.notifications.inbox.Add([]byte{5, 1, 0, 'K', 'e', 'e', 'p'})
+	saved := u.notifications.inbox
+	for i := 0; i < 10; i++ {
+		d.tick(u, now, power)
+	}
+	if d.updateWorkspace != nil {
+		t.Fatal("ordinary use allocated OTA workspace")
+	}
+	u.beginDirectUpdate(now)
+	d.tick(u, now, power)
+	workspace := d.updateWorkspace
+	if workspace == nil {
+		t.Fatal("OTA did not obtain its workspace")
+	}
+	var payload [236]byte
+	for i := range payload {
+		payload[i] = byte(i)
+	}
+	if got := testing.AllocsPerRun(100, func() {
+		u.beginDirectUpdate(now)
+		d.tick(u, now, power)
+		radio.control(1, 42, 1000)
+		d.tick(u, now, power)
+		radio.chunk(42, 0, payload[:])
+		d.tick(u, now, power)
+		if d.receiver.Offset != 236 {
+			panic("transfer was not durable")
+		}
+		u.transfer.open = false
+		d.tick(u, now, power)
+		if d.updateWorkspace != workspace || d.receiver.Session != 0 || d.packet != [244]byte{} || u.notifications.inbox != saved {
+			panic("retry lost workspace ownership or live messages")
+		}
+	}); got != 0 {
+		t.Fatalf("warmed OTA session allocated %g times", got)
+	}
+}
+
 func TestDirectUpdateDefersHostCallbacksToMainLoop(t *testing.T) {
 	u, d, r, _, _ := directFixture()
 	now := time.Now()

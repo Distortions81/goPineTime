@@ -19,12 +19,12 @@ func TestAppleNotificationLifecycleAndSession(t *testing.T) {
 	if changed, buzz := b.ApplyApple(applePacket(10, 0, 0, "Messages", "Hello")); !changed || !buzz {
 		t.Fatal("new notification missing")
 	}
-	id := b.Messages[0].ID
+	id := b.At(0).ID
 	b.Read(id)
 	if changed, buzz := b.ApplyApple(applePacket(10, 1, 0, "Messages", "Updated")); !changed || buzz || b.Count != 2 {
 		t.Fatal("modification duplicated or buzzed")
 	}
-	if b.Messages[0].ID != id || b.Messages[0].Unread || Text(b.Messages[0].Body[:]) != "Updated" {
+	if b.At(0).ID != id || b.At(0).Unread || Text(b.At(0).Body[:]) != "Updated" {
 		t.Fatal("modification lost local state")
 	}
 	b.ApplyApple(applePacket(20, 0, 0, "Mail", "News"))
@@ -32,7 +32,7 @@ func TestAppleNotificationLifecycleAndSession(t *testing.T) {
 		t.Fatal("removal failed")
 	}
 	b.ApplyApple(applePacket(0, 3, 0, "", ""))
-	if b.Count != 1 || b.Messages[0].Apple || Text(b.Messages[0].Body[:]) != "Android" {
+	if b.Count != 1 || b.At(0).Apple || Text(b.At(0).Body[:]) != "Android" {
 		t.Fatal("session clear lost Android or kept stale Apple IDs")
 	}
 }
@@ -43,13 +43,13 @@ func TestApplePreExistingSilentBoundsAndUIDZero(t *testing.T) {
 			t.Fatal("silent/pre-existing buzzed", flags)
 		}
 		b.ApplyApple(applePacket(0, 0, flags, "Title", "Repeat"))
-		if b.Count != 1 || b.Messages[0].RemoteID != 0 {
+		if b.Count != 1 || b.At(0).RemoteID != 0 {
 			t.Fatal("UID zero or duplicate mishandled")
 		}
 		for i := uint32(1); i < 20; i++ {
 			b.ApplyApple(applePacket(i, 0, 0, "Title", "Body"))
 		}
-		if b.Count != Capacity || b.Messages[0].RemoteID != 19 {
+		if b.Count != Capacity || b.At(0).RemoteID != 19 {
 			t.Fatal("capacity or newest ordering")
 		}
 	}
@@ -69,9 +69,9 @@ func TestApplePeerUIDsAndDisconnectsAreIndependent(t *testing.T) {
 		return p
 	}
 	b.ApplyApple(packet(1, 0, "Phone A"))
-	a := b.Messages[0].ID
+	a := b.At(0).ID
 	b.ApplyApple(packet(2, 0, "Phone B"))
-	second := b.Messages[0].ID
+	second := b.At(0).ID
 	if b.Count != 2 || a == second {
 		t.Fatal("equal remote UIDs merged across devices")
 	}

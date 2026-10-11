@@ -10,6 +10,15 @@ type Canvas interface {
 	FillRectangle(x, y, width, height int16, c color.RGBA) error
 }
 
+// ResolveColor lets a canvas supply a semantic palette. Resolve before
+// coverage is applied, so antialiased edges use the selected foreground.
+func ResolveColor(d any, c color.RGBA) color.RGBA {
+	if themed, ok := d.(interface{ ThemeColor(color.RGBA) color.RGBA }); ok {
+		return themed.ThemeColor(c)
+	}
+	return c
+}
+
 // Over composites a premultiplied source onto an opaque destination.
 func Over(dst, src color.RGBA) color.RGBA {
 	if src.A == 255 {
@@ -43,7 +52,7 @@ func Bounds(d Canvas) (int, int, int, int) {
 }
 
 func FillBox(d Canvas, x, y, w, h int16, c color.RGBA) {
-	fillBox(d, int(x), int(y), int(w), int(h), c)
+	fillBox(d, int(x), int(y), int(w), int(h), ResolveColor(d, c))
 }
 
 // Keep intermediate coordinates wider than the public int16 surface API.
@@ -60,6 +69,7 @@ func fillBox(d Canvas, x, y, w, h int, c color.RGBA) {
 }
 
 func Box(d Canvas, x, y, w, h, thickness int16, c color.RGBA) {
+	c = ResolveColor(d, c)
 	if w <= 0 || h <= 0 || thickness <= 0 {
 		return
 	}
@@ -80,6 +90,7 @@ func Box(d Canvas, x, y, w, h, thickness int16, c color.RGBA) {
 // Line uses fixed-point coverage along the minor axis. Integer horizontal
 // and vertical lines stay crisp; reversed endpoints produce identical pixels.
 func Line(d Canvas, x0, y0, x1, y1 int16, c color.RGBA) {
+	c = ResolveColor(d, c)
 	ax, ay, bx, by := int(x0), int(y0), int(x1), int(y1)
 	steep := abs(by-ay) > abs(bx-ax)
 	if steep {
@@ -119,6 +130,7 @@ func Line(d Canvas, x0, y0, x1, y1 int16, c color.RGBA) {
 func Circle(d Canvas, x, y, radius int16, c color.RGBA)     { circle(d, x, y, radius, false, c) }
 func FillCircle(d Canvas, x, y, radius int16, c color.RGBA) { circle(d, x, y, radius, true, c) }
 func circle(d Canvas, x, y, radius int16, filled bool, c color.RGBA) {
+	c = ResolveColor(d, c)
 	if radius < 0 {
 		return
 	}
@@ -149,6 +161,7 @@ const roundCorner6 = "\x00\x00\x00\x07\x0d\x10\x00\x01\x0d\x10\x10\x10\x00\x0d\x
 // RoundBox fills a rounded rectangle. Only corner pixels use 4x4 coverage;
 // the straight interior goes through the canvas's batched rectangle path.
 func RoundBox(d Canvas, x, y, w, h, radius int16, c color.RGBA) {
+	c = ResolveColor(d, c)
 	if w <= 0 || h <= 0 {
 		return
 	}

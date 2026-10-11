@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/Distortions81/goPine/internal/gfx"
 	"github.com/Distortions81/goPine/internal/uifont"
 	"image/color"
 	"strings"
@@ -16,6 +17,7 @@ func writeLine(d drivers.Displayer, font tinyfont.Fonter, x, y int16, text strin
 	if !textVisible(d, font, y, text) {
 		return
 	}
+	c = gfx.ResolveColor(d, c)
 	if fast, ok := font.(*uifont.Font); ok {
 		fast.DrawText(d, x, y, text, c)
 		return

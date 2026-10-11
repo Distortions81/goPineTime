@@ -20,6 +20,7 @@ type desktopDisplay struct {
 	pointerX, pointerY int16
 	asleep             bool
 	touchWake          bool
+	brightness         uint8
 	flipped            bool
 	vibrating          bool
 	chargeState        chargeState
@@ -132,6 +133,23 @@ func (d *desktopDisplay) Wake() error {
 func (d *desktopDisplay) KeepAwake() {}
 
 func (d *desktopDisplay) SetTouchWake(enabled bool) { d.touchWake = enabled }
+
+func (d *desktopDisplay) SetBrightness(level uint8) {
+	level = validBrightness(level)
+	if d.brightness == level {
+		return
+	}
+	d.brightness = level
+	value := float32(1)
+	if level == brightnessLow {
+		value = 0.35
+	} else if level == brightnessMedium {
+		value = 0.65
+	}
+	// Some SDL drivers (including headless tests) cannot change brightness.
+	// Retain the selected level; the watch uses its physical backlight pins.
+	_ = d.window.SetBrightness(value)
+}
 
 func (d *desktopDisplay) SetVibration(on bool) {
 	if d.vibrating == on {

@@ -59,7 +59,7 @@ func drawCharging(d canvas, p powerStatus) {
 	gfx.FillBox(d, 181, 61, 7, 20, c)
 	fill := int16(min(p.Percent, 100)) * 112 / 100
 	if fill > 0 {
-		_ = d.FillRectangle(61, 59, fill, 24, c)
+		gfx.FillBox(d, 61, 59, fill, 24, c)
 	}
 	percent, start := percentDigits(p.Percent)
 	digits := string(percent[start:3])

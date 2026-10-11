@@ -46,7 +46,7 @@ func (l *watchLoop) run() error {
 			power = l.display.PowerStatus()
 			nextPower = now.Add(powerPollInterval)
 		}
-		if l.ui.tickTimers(now, l.state()) {
+		if !l.sync.directMode && l.ui.tickTimers(now, l.state()) {
 			if err := wakeAlert(); err != nil {
 				return err
 			}
@@ -54,12 +54,15 @@ func (l *watchLoop) run() error {
 		if l.updater != nil {
 			l.updater.tick(l.ui, now, power)
 		}
-		if l.beforeSync != nil {
+		exclusive := l.ui.updateExclusive() || l.sync.directMode
+		if !exclusive && l.beforeSync != nil {
 			l.beforeSync(now)
 		}
 		l.sync.update(l.ui, now, power.Percent)
-		l.ui.receiveAppleNotifications(l.sync.radio, now)
-		if l.sync.updatePairing(l.ui) {
+		if !exclusive {
+			l.ui.receiveAppleNotifications(l.sync.radio, now)
+		}
+		if !exclusive && l.sync.updatePairing(l.ui) {
 			if err := wakeAlert(); err != nil {
 				return err
 			}
@@ -67,13 +70,20 @@ func (l *watchLoop) run() error {
 		if l.ui.pairingVisible() || l.ui.phoneSetupVisible(now) || l.ui.sync.Open || l.ui.timers.active || (l.ui.weather != nil && l.ui.weather.open) || (l.ui.page == pageTransfer && l.ui.transfer != nil && l.ui.transfer.open) {
 			l.display.KeepAwake()
 		}
-		notificationBuzz := l.ui.notificationVibrating(now)
-		l.display.SetVibration(l.ui.timers.vibrating(now) || notificationBuzz)
+		vibrating := false
+		if !exclusive {
+			notificationBuzz := l.ui.notificationVibrating(now)
+			vibrating = l.ui.timers.vibrating(now) || notificationBuzz
+		}
+		l.display.SetVibration(vibrating)
 		l.display.SetTouchWake(l.ui.touchWake)
+		if backlight, ok := l.display.(interface{ SetBrightness(uint8) }); ok {
+			backlight.SetBrightness(l.ui.brightness)
+		}
 		// Capture the deadline before rendering. A frame that crosses a minute
 		// or alert boundary must service that deadline immediately afterward.
 		wakeAt := now.Add(nextLoopDelay(now, l.ui, nextPower, awake))
-		if l.save != nil {
+		if !exclusive && l.save != nil {
 			if due := l.save(now, power); !due.IsZero() && due.Before(wakeAt) {
 				wakeAt = due
 			}
@@ -133,7 +143,7 @@ func (l *watchLoop) run() error {
 		}
 		// An alert can arrive during Wait while a contact began on another page.
 		// Discard that contact so it cannot dismiss the new alert or finish OTA.
-		if l.ui.tickTimers(now, l.state()) {
+		if !l.sync.directMode && l.ui.tickTimers(now, l.state()) {
 			if err := wakeAlert(); err != nil {
 				return err
 			}

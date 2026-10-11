@@ -156,7 +156,8 @@ type frameKey struct {
 	power                                    chargeState
 	use24, holding, approximate, initialized bool
 	syncOpen, syncPending                    bool
-	touchWake, flipScreen                    bool
+	touchWake, flipScreen, lightMode         bool
+	brightness                               uint8
 	weatherRevision                          uint32
 	notificationRevision                     uint32
 }
@@ -166,15 +167,15 @@ type frameKey struct {
 //go:noinline
 func (u *watchUI) frameKey(now time.Time, power powerStatus) frameKey {
 	if u.pairingVisible() {
-		return frameKey{page: pagePairing, step: int(u.pairing.code), syncSecond: int64(u.pairing.progress)}
-	}
-	if u.page == pagePairingSettings && u.pairing != nil {
-		return frameKey{page: pagePairingSettings, step: u.pairing.status, holding: u.pairing.confirm, message: u.pairing.note, syncSecond: int64(u.pairing.diagnostic) | int64(u.pairing.progress)<<32 | int64(u.pairing.count)<<48}
+		return frameKey{lightMode: u.lightMode, brightness: u.brightness, page: pagePairing, percent: power.Percent, power: power.State, step: int(u.pairing.code), syncSecond: int64(u.pairing.progress)}
 	}
 	if u.powerNoticeVisible() {
-		return frameKey{page: pageCharging, percent: power.Percent, power: power.State}
+		return frameKey{lightMode: u.lightMode, brightness: u.brightness, page: pageCharging, percent: power.Percent, power: power.State}
 	}
-	key := frameKey{page: u.page, message: u.message, settingsNote: u.settingsNote,
+	if u.page == pagePairingSettings && u.pairing != nil {
+		return frameKey{lightMode: u.lightMode, brightness: u.brightness, page: pagePairingSettings, percent: power.Percent, power: power.State, step: u.pairing.status, holding: u.pairing.confirm, message: u.pairing.note, syncSecond: int64(u.pairing.diagnostic) | int64(u.pairing.progress)<<32 | int64(u.pairing.count)<<48}
+	}
+	key := frameKey{lightMode: u.lightMode, brightness: u.brightness, page: u.page, message: u.message, settingsNote: u.settingsNote,
 		use24: u.use24, touchWake: u.touchWake, flipScreen: u.flipScreen, holding: u.holding, step: u.holdStep, edit: u.edit,
 		approximate: u.clock.approximate, initialized: u.clock.initialized,
 		percent: power.Percent, power: power.State, timer: u.timerFrameKey(now)}
@@ -198,6 +199,9 @@ func (u *watchUI) frameKey(now time.Time, power powerStatus) frameKey {
 		if w.open {
 			key.syncSecond = int64(max(0, w.expires.Sub(now)+time.Second-1) / time.Second)
 		}
+	}
+	if u.page == pageBatteryConfirm {
+		key.step = int(u.batteryChoice)
 	}
 	if (u.page == pageMusic || u.page == pagePhone) && u.phone != nil {
 		p := u.phone

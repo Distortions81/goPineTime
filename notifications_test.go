@@ -32,7 +32,7 @@ func sampleNotifications() *notificationState {
 	n.inbox.Add(notificationPacket("Mail: Alice\x00Lunch at noon?"))
 	n.inbox.Add(notificationPacket("Messages: Jordan\x00I'll meet you at the trailhead."))
 	n.inbox.Add(notificationPacket("A very long source and sender name\x00" + strings.Repeat("W", 65)))
-	n.selected = n.inbox.Messages[0].ID
+	n.selected = n.inbox.At(0).ID
 	return n
 }
 
@@ -42,7 +42,7 @@ func notificationPreview(kind string) *notificationState {
 	case "quiet":
 		n.quiet = true
 	case "read":
-		n.selected = n.inbox.Messages[2].ID
+		n.selected = n.inbox.At(2).ID
 		n.inbox.Read(n.selected)
 	case "more":
 		data, size := notificationText(n.inbox.Find(n.selected))
@@ -51,7 +51,7 @@ func notificationPreview(kind string) *notificationState {
 		n.selected = 12345
 	case "call":
 		n.inbox.Add([]byte{3, 1, 0, 'A', 'l', 'i', 'c', 'e'})
-		n.selected = n.inbox.Messages[0].ID
+		n.selected = n.inbox.At(0).ID
 	}
 	return n
 }
@@ -99,7 +99,7 @@ func TestNotificationNavigationAndStableSelection(t *testing.T) {
 	now := time.Now()
 	u := newWatchUI(firmwareConfirmed)
 	u.page = pageApps
-	u.handle(inputEvent{Kind: inputTap, X: 195, Y: 25}, now, firmwareConfirmed, powerStatus{})
+	u.handle(inputEvent{Kind: inputTap, X: 63, Y: 197}, now, firmwareConfirmed, powerStatus{})
 	if u.page != pageInbox || u.notifications == nil || u.phone != nil {
 		t.Fatal("opening inbox should leave radio off")
 	}

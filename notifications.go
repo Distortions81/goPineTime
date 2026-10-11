@@ -141,7 +141,11 @@ func (u *watchUI) handleNotifications(e inputEvent, state updateState) {
 	}
 	switch {
 	case inRect(e, 12, 42, 114, 74):
-		n.quiet = !n.quiet
+		if n.quiet {
+			u.askBattery(batteryBuzz)
+		} else {
+			n.quiet = true
+		}
 		n.buzzUntil = time.Time{}
 	case inRect(e, 126, 42, 228, 74):
 		n.inbox.Clear()
@@ -149,7 +153,7 @@ func (u *watchUI) handleNotifications(e inputEvent, state updateState) {
 	default:
 		for i := 0; i < n.inbox.Count; i++ {
 			if inRect(e, 12, int16(78+i*38), 228, int16(112+i*38)) {
-				n.selected, n.offset = n.inbox.Messages[i].ID, 0
+				n.selected, n.offset = n.inbox.At(i).ID, 0
 				n.inbox.Read(n.selected)
 				n.buzzUntil = time.Time{}
 				u.page = pageNotification
@@ -216,13 +220,13 @@ func (u *watchUI) drawNotifications(d canvas) {
 		clockControl(d, 126, 42, 102, 32, "CLEAR", card)
 		if n.inbox.Count == 0 {
 			centered(d, &uifont.Regular18, 117, "No messages", white)
-			centered(d, &uifont.Regular18, 150, "Settings > Phone", muted)
+			centered(d, &uifont.Regular18, 150, "Settings > Bluetooth", muted)
 			centered(d, &uifont.Regular18, 179, "iPhone or Android", muted)
 			centered(d, &uifont.Regular18, 222, "Cleared on restart", muted)
 			return
 		}
 		for i := 0; i < n.inbox.Count; i++ {
-			m := &n.inbox.Messages[i]
+			m := n.inbox.At(i)
 			y := int16(78 + i*38)
 			if !textVisible(d, &uifont.Regular18, y+24, "") {
 				continue

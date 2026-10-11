@@ -44,6 +44,7 @@ const (
 	pagePairing
 	pagePairingSettings
 	pageCharging // Frame identity for the full-screen power notice overlay.
+	pageBatteryConfirm
 )
 
 type uiAction uint8
@@ -65,6 +66,9 @@ type watchUI struct {
 	use24         bool
 	touchWake     bool
 	flipScreen    bool
+	lightMode     bool
+	brightness    uint8
+	batteryChoice batteryChoice
 	phoneAuto     bool
 	holding       bool
 	holdSince     time.Time
@@ -97,6 +101,7 @@ func (u *watchUI) cancelHold() { u.holding, u.holdStep = false, 0 }
 
 func (u *watchUI) home(state updateState) {
 	u.cancelHold()
+	u.batteryChoice = batteryNone
 	u.page = pageClock
 	if state == firmwareTrial {
 		u.page = pageTrial
@@ -160,6 +165,10 @@ func (u *watchUI) handle(e inputEvent, now time.Time, state updateState, power p
 		return actionNone
 	}
 	if u.handlePowerNotice(e) {
+		return actionNone
+	}
+	if u.page == pageBatteryConfirm {
+		u.handleBatteryConfirm(e, now)
 		return actionNone
 	}
 	if u.page == pageTransfer {
@@ -262,7 +271,7 @@ func (u *watchUI) handle(e inputEvent, now time.Time, state updateState, power p
 			u.page = pageTimeSettings
 		} else if inRect(e, 16, 88, 224, 128) {
 			u.openPhone()
-		} else if inRect(e, 16, 134, 224, 174) {
+		} else if inRect(e, 16, 180, 224, 220) {
 			switch state {
 			case firmwareUnavailable:
 				u.showMessage("Wired MCUboot setup required. See OTA docs.")
@@ -278,7 +287,7 @@ func (u *watchUI) handle(e inputEvent, now time.Time, state updateState, power p
 					u.page, u.expires = pageUpdate, now.Add(30*time.Second)
 				}
 			}
-		} else if inRect(e, 16, 180, 224, 220) {
+		} else if inRect(e, 16, 134, 224, 174) {
 			u.page = pageDisplaySettings
 		}
 	case pageMessage:
@@ -312,6 +321,7 @@ var (
 	card     = color.RGBA{17, 17, 17, 255}
 	accent   = color.RGBA{68, 221, 170, 255}
 	positive = color.RGBA{0, 51, 34, 255}
+	disabled = color.RGBA{88, 101, 111, 255}
 )
 
 func centered(d canvas, font tinyfont.Fonter, y int16, text string, c color.RGBA) {
@@ -400,6 +410,10 @@ const updateCounterBaseline = 122
 const updateProgressY = 134
 
 func (u *watchUI) draw(d canvas, now time.Time) {
+	if u.page == pageBatteryConfirm {
+		u.drawBatteryConfirm(d)
+		return
+	}
 	if u.page == pageTransfer {
 		u.drawTransfer(d)
 		return
@@ -458,11 +472,11 @@ func (u *watchUI) draw(d canvas, now time.Time) {
 		return
 	}
 	if u.page == pageSettings {
-		centered(d, &uifont.Bold18, 29, "SETTINGS", white)
-		clockControl(d, 16, 42, 208, 40, "TIME & DATE", card)
-		clockControl(d, 16, 88, 208, 40, "PHONE", card)
-		clockControl(d, 16, 134, 208, 40, "FIRMWARE UPDATE", positive)
-		clockControl(d, 16, 180, 208, 40, "DISPLAY", card)
+		centered(d, &uifont.Bold18, 29, "Settings", white)
+		clockControl(d, 16, 42, 208, 40, "Time & date", card)
+		clockControl(d, 16, 88, 208, 40, "Bluetooth", card)
+		clockControl(d, 16, 134, 208, 40, "Display", card)
+		clockControl(d, 16, 180, 208, 40, "Firmware update", card)
 		return
 	}
 	centered(d, &uifont.Regular18, 29, "goPine "+firmwareVersion, muted)

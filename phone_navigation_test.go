@@ -66,7 +66,7 @@ func TestSettingsRowsRemainIndependentlyReachable(t *testing.T) {
 	for _, tc := range []struct {
 		y    int16
 		want page
-	}{{62, pageTimeSettings}, {108, pagePhone}, {154, pageUpdate}, {200, pageDisplaySettings}} {
+	}{{62, pageTimeSettings}, {108, pagePhone}, {154, pageDisplaySettings}, {200, pageUpdate}} {
 		u := newWatchUI(firmwareConfirmed)
 		u.page = pageSettings
 		u.handle(inputEvent{Kind: inputTap, X: 120, Y: tc.y}, now, firmwareConfirmed, powerStatus{Percent: 80})
@@ -83,9 +83,9 @@ func TestPhoneInfoAndBackPreserveSharedConnection(t *testing.T) {
 	u.openPhone()
 	r := &fakePhoneRadio{}
 	c := timeSyncController{radio: r, running: true, phoneMode: phoneConnected}
-	u.handle(inputEvent{Kind: inputTap, X: 200, Y: 25}, now, firmwareConfirmed, powerStatus{})
+	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 158}, now, firmwareConfirmed, powerStatus{})
 	if u.page != pagePairingSettings {
-		t.Fatal("INFO did not open pairing information")
+		t.Fatal("Paired devices did not open pairing information")
 	}
 	c.update(&u, now, 80)
 	u.handle(inputEvent{Kind: inputSwipeRight}, now, firmwareConfirmed, powerStatus{})

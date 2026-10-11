@@ -28,22 +28,34 @@ func (u *watchUI) handleDisplaySettings(e inputEvent) {
 		return
 	}
 	switch {
-	case inRect(e, 16, 62, 224, 114):
-		u.touchWake = !u.touchWake
-	case inRect(e, 16, 132, 224, 184):
+	case inRect(e, 16, 42, 224, 82):
+		u.lightMode = !u.lightMode
+	case inRect(e, 16, 88, 224, 128):
+		u.askBattery(batteryHigh + batteryChoice((validBrightness(u.brightness)+1)%3))
+	case inRect(e, 16, 134, 224, 174):
+		if u.touchWake {
+			u.touchWake = false
+		} else {
+			u.askBattery(batteryTouch)
+		}
+	case inRect(e, 16, 180, 224, 220):
 		u.flipScreen = !u.flipScreen
 	}
 }
 func (u *watchUI) drawDisplaySettings(d canvas) {
-	centered(d, &uifont.Bold18, 29, "DISPLAY", white)
-	wake, flip := "TOUCH WAKE: OFF", "FLIP SCREEN: OFF"
+	centered(d, &uifont.Bold18, 29, "Display", white)
+	theme, wake, flip := "Theme: Dark", "Touch wake: Off", "Rotation: Normal"
+	if u.lightMode {
+		theme = "Theme: Light"
+	}
 	if u.touchWake {
-		wake = "TOUCH WAKE: ON"
+		wake = "Touch wake: On"
 	}
 	if u.flipScreen {
-		flip = "FLIP SCREEN: ON"
+		flip = "Rotation: Flipped"
 	}
-	clockControl(d, 16, 62, 208, 52, wake, card)
-	clockControl(d, 16, 132, 208, 52, flip, card)
-	centered(d, &uifont.Regular18, 218, u.settingsNote, muted)
+	clockControl(d, 16, 42, 208, 40, theme, card)
+	clockControl(d, 16, 88, 208, 40, brightnessLabel(u.brightness), card)
+	clockControl(d, 16, 134, 208, 40, wake, card)
+	clockControl(d, 16, 180, 208, 40, flip, card)
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"hash/crc32"
 	"testing"
+	"unsafe"
 )
 
 var errCut = errors.New("power cut")
@@ -271,7 +272,44 @@ func (f *readbackFailure) WriteAt(b []byte, off int64) (int, error) {
 }
 
 func sampleSettings() Settings {
-	return Settings{CountdownSeconds: 300, Alarms: [5]Alarm{{Hour: 7, Minute: 30, Repeat: 2, Enabled: true}}}
+	s := Settings{CountdownSeconds: 300, Alarms: [5]Alarm{{Hour: 7, Minute: 30, Repeat: 2, Enabled: true}}}
+	s.SetDisplay(true, 2)
+	return s
+}
+
+func TestDisplayRecordCompatibility(t *testing.T) {
+	// Adding display choices uses existing padding, not another word in each
+	// saved/observed settings snapshot on the constrained event-loop stack.
+	if unsafe.Sizeof(Settings{}) != 28 || RecordSize != 160 {
+		t.Fatal("display choices enlarged settings or flash records")
+	}
+	r := Record{HasSettings: true, HasTime: true, Hours: 1234, Use24: true,
+		Settings: Settings{CountdownSeconds: 300, TouchWake: true, FlipScreen: true, PhoneAuto: true,
+			Alarms: [5]Alarm{{Hour: 7, Minute: 30, Repeat: 2, Enabled: true}}}}
+	b := encode(r)
+	// Previous firmware wrote zeros to these reserved bytes. Preserve every
+	// other setting while defaulting the newly supported choices.
+	clear(b[147:152])
+	binary.LittleEndian.PutUint32(b[152:156], crc32.ChecksumIEEE(b[:152]))
+	if got, ok := decode(&b); !ok || got != r || got.Settings.LightMode() || got.Settings.Brightness() != 0 {
+		t.Fatal("old settings did not retain dark/default-high with alarms and phone auto")
+	}
+	for _, light := range []bool{false, true} {
+		for brightness := uint8(0); brightness < 3; brightness++ {
+			r.Settings.SetDisplay(light, brightness)
+			b = encode(r)
+			if got, ok := decode(&b); !ok || got != r || got.Settings.LightMode() != light || got.Settings.Brightness() != brightness {
+				t.Fatal("display choice did not round-trip", light, brightness)
+			}
+		}
+	}
+	for _, invalid := range []byte{6, 7, 128, 255} {
+		b[147] = invalid
+		binary.LittleEndian.PutUint32(b[152:156], crc32.ChecksumIEEE(b[:152]))
+		if _, ok := decode(&b); ok {
+			t.Fatal("accepted unsupported display choice", invalid)
+		}
+	}
 }
 
 func TestSettingsAndRuntimeAtomicityAtEveryWord(t *testing.T) {

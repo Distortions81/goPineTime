@@ -15,8 +15,11 @@ type memoryDisplay struct {
 	pixels          [240 * 240]color.RGBA
 	writes, singles int
 	fail            bool
+	lightMode       bool
 }
 
+func (d *memoryDisplay) SetLightMode(light bool)                { d.lightMode = light }
+func (d *memoryDisplay) ThemeColor(c color.RGBA) color.RGBA     { return themeColor(d.lightMode, c) }
 func (d *memoryDisplay) Size() (int16, int16)                   { return 240, 240 }
 func (d *memoryDisplay) Display() error                         { return nil }
 func (d *memoryDisplay) PowerStatus() powerStatus               { return powerStatus{} }

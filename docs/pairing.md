@@ -1,4 +1,4 @@
-# Phone connection and pairing — 0.3.27 candidate
+# Bluetooth connection and pairing
 
 On 2026-10-11 the user reports that Bluetooth works but InfiniLink never displays
 the watch. Their **Home, Charts, Settings** interface matches the classic 1.0.2
@@ -114,7 +114,7 @@ build/ota/venv/bin/python -u scripts/pairing_harness.py --mode trace
 ```
 
 For a physical pre-PIN test, close the phone app temporarily, put the watch in
-Settings → Phone → CONNECT PHONE, then run:
+**Settings → Bluetooth**, tap **Turn on** (or **Pair a device** when already on), then run:
 
 ```sh
 build/ota/venv/bin/python -u scripts/pairing_harness.py --mode probe --cycles 3
@@ -255,9 +255,10 @@ the candidate fixes it.
 
 ## Two paired devices for phone features
 
-Open **Settings → Phone → CONNECT PHONE**. The 0.3.27 candidate retains up to
+Open **Settings → Bluetooth** and tap **Turn on**. Use **Pair a device** when
+Bluetooth is already enabled. Since 0.3.27, goPine retains up to
 two paired devices and accepts authenticated time, weather, music and supported
-notifications from both at once. Keep **AUTO CONNECT: ON** to allow reconnection.
+notifications from both at once. Leave Bluetooth on to allow reconnection.
 Browsing apps, returning to the clock and sleeping the screen leave both links
 available. New pairing is serialized so only one device owns the displayed PIN.
 Saved devices may restore encryption concurrently.
@@ -267,7 +268,7 @@ confirmed boot. New installations and older settings default to Bluetooth Off.
 The watch advertises so the companion can reconnect; the phone remains the
 Bluetooth central and decides when to connect. This setting does not force a
 suspended or stopped phone app to run. Firmware Update temporarily takes over
-the radio. **BLUETOOTH OFF** disables automatic reconnection while retaining the
+the radio. **Turn off** disables automatic reconnection while retaining the
 saved bonds. Cancelling the displayed pairing disconnects only that new device.
 **FORGET ALL** turns auto-connect off and clears both saved pairings after the
 radio stops; it requires the on-watch confirmation.
@@ -293,13 +294,14 @@ details; it does not start a separate pairing session.
 1. Use InfiniLink's normal connection mode. Allow notification sharing when iOS
    asks. The newer development app has a **Force ANCS** option; classic 1.0.2
    does not have that setting.
-2. Open **Settings → Phone** on the watch and tap **CONNECT PHONE**. In InfiniLink, select the
+2. Open **Settings → Bluetooth** on the watch and tap **Turn on**, or **Pair a
+   device** if it is already enabled. In InfiniLink, select the
    watch advertised as **InfiniTime**. goPine uses a different Bluetooth identity
    from the InfiniTime recovery clock.
 3. Enter the six-digit code shown on the watch. New peers start security through
    the phone’s ANCS request or protected feature access; saved peers may restore
    encryption without another PIN. Check that InfiniLink receives
-   battery data and **Phone → INFO** shows the saved-device count (up to two).
+   battery data and **Bluetooth → Paired devices** shows the saved-device count (up to two).
 4. Allow Apple Music permissions, and weather/location permissions if the
    installed companion supports weather.
    Leave auto-connect enabled on the watch. Subsequent connections should reuse
@@ -369,27 +371,25 @@ goPine. Metadata still depends on the companion's music updates.
 
 ## On-device acceptance
 
-1. Enable Phone once and complete pairing with InfiniLink and iOS notification
+1. Turn on Bluetooth and complete pairing with InfiniLink and iOS notification
    sharing allowed. Record the actual companion version. Confirm Home leaves
    Connecting, automatic time setting, battery display, and Apple Music controls.
-   Test current weather and forecast with a companion version that implements
-   weather; classic 1.0.2 cannot send it.
+   The Weather button is temporarily disabled. Its receiver remains available
+   to automated checks; classic 1.0.2 cannot send weather.
    Deliver a real iPhone notification, modify/remove it, and reconnect. Check
    silent/pre-existing notifications do not vibrate and stale session IDs clear.
-2. Switch among Phone, Music, Weather, and the clock; let the screen sleep.
+2. Switch among Bluetooth, Music, Messages, and the clock; let the screen sleep.
    Confirm the shared connection remains available and incoming weather does
-   not disconnect it. Check the weather receipt age instead of assuming that a
-   connection implies fresh weather. Repeatedly enter and leave Weather after
-   InfiniLink connects, then exercise BLUETOOTH OFF and a settings-save shutdown
-   while connected to check the previously reported exit/crash path.
+   not disconnect it. Tap the muted Weather button and confirm it leaves Apps
+   unchanged. Exercise **Turn off** and a settings-save shutdown while connected.
 3. Leave range and return, lock the phone, then reboot the confirmed watch.
    Confirm the saved setting and bond allow reconnection without another code.
    Repeat after the phone rotates its private address. Test time received during
    pairing as well as after an already-bonded reconnect.
-4. Verify **BLUETOOTH OFF** survives reboot and releases the radio. Test the
+4. Verify **Turn off** survives reboot and releases the radio. Test the
    Firmware Update handoff and return to normal phone use after canceling it.
 5. Test pairing cancellation, incorrect code, timeout, removed phone bond,
-   radio failure, and low battery. **Phone → INFO → FORGET ALL → TAP TO
+   radio failure, and low battery. **Bluetooth → Paired devices → FORGET ALL → TAP TO
    CONFIRM** stops Bluetooth and erases both saved pairings; also forget the watch
    in each device's Bluetooth settings before pairing again.
 6. Measure screen-off consumption with auto-connect off, connected, and waiting

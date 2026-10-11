@@ -65,7 +65,7 @@ func TestFlippedLoopRestoresBeforeFirstFrameAndRetainsOnWake(t *testing.T) {
 		}},
 		{at: time.Second, event: inputEvent{Kind: inputSleep}},
 		{at: 2 * time.Second, event: inputEvent{Kind: inputWake}},
-		{at: 3 * time.Second, event: inputEvent{Kind: inputTap, X: 119, Y: 81}}, // logical (120,158), flip off
+		{at: 3 * time.Second, event: inputEvent{Kind: inputTap, X: 119, Y: 39}}, // logical (120,200), flip off
 		{at: 4 * time.Second, event: inputEvent{Kind: inputQuit}, check: func() {
 			if u.flipScreen || len(d.flips) != 2 || d.flips[1] {
 				t.Fatal("rotated controls or wake persistence failed")

@@ -35,8 +35,19 @@ type Image struct {
 // Validate streams the image through a small buffer; the watch has only 64KB
 // of RAM. Only the stock, unencrypted, SHA-256-only image format is accepted.
 func Validate(r io.ReaderAt, offset, limit int64) (Image, error) {
+	var scratch [256]byte
+	return ValidateWithScratch(r, offset, limit, scratch[:])
+}
+
+// ValidateWithScratch borrows caller-owned storage for the duration of the
+// synchronous read. Header, TLV and hash reads never overlap, so they share it.
+// A receiver can validate repeatedly without allocating new DMA buffers.
+func ValidateWithScratch(r io.ReaderAt, offset, limit int64, scratch []byte) (Image, error) {
 	var result Image
-	var header [HeaderSize + 8]byte
+	if len(scratch) < HeaderSize+8 {
+		return result, errors.New("image scratch too small")
+	}
+	header := scratch[:HeaderSize+8]
 	if limit < int64(len(header)+40) {
 		return result, errors.New("image too short")
 	}
@@ -53,7 +64,7 @@ func Validate(r io.ReaderAt, offset, limit int64) (Image, error) {
 	if err := ValidateVectors(header[HeaderSize:], uint32(bodySize)); err != nil {
 		return result, err
 	}
-	var tlv [40]byte
+	tlv := scratch[:40]
 	if err := readAt(r, tlv[:], offset+HeaderSize+bodySize); err != nil {
 		return result, err
 	}
@@ -61,9 +72,11 @@ func Validate(r io.ReaderAt, offset, limit int64) (Image, error) {
 		tlv[4] != 0x10 || tlv[5] != 0 || le.Uint16(tlv[6:8]) != 32 {
 		return result, errors.New("missing SHA-256 image TLV")
 	}
+	var expected [32]byte
+	copy(expected[:], tlv[8:])
 	var h imagesha256.Digest
 	h.Reset()
-	var buffer [256]byte
+	buffer := scratch
 	for pos := int64(0); pos < HeaderSize+bodySize; {
 		n := min(int64(len(buffer)), HeaderSize+bodySize-pos)
 		if err := readAt(r, buffer[:n], offset+pos); err != nil {
@@ -74,7 +87,7 @@ func Validate(r io.ReaderAt, offset, limit int64) (Image, error) {
 	}
 	result.Digest = h.Sum()
 	for i, b := range result.Digest {
-		if b != tlv[i+8] {
+		if b != expected[i] {
 			return Image{}, errors.New("image SHA-256 mismatch")
 		}
 	}

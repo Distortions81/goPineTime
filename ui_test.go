@@ -32,7 +32,7 @@ func openUpdate(t *testing.T, u *watchUI, now time.Time) {
 	if u.page != pageSettings {
 		t.Fatal("swipe did not open settings")
 	}
-	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 145}, now, firmwareConfirmed, power)
+	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 200}, now, firmwareConfirmed, power)
 	if u.page != pageUpdate {
 		t.Fatal("settings did not open update prompt")
 	}
@@ -133,7 +133,7 @@ func TestUpdateCancelExpiryAndPower(t *testing.T) {
 		}
 		u = newWatchUI(state)
 		u.handle(inputEvent{Kind: inputSwipeLeft}, now, state, power)
-		u.handle(inputEvent{Kind: inputTap, X: 120, Y: 145}, now, state, power)
+		u.handle(inputEvent{Kind: inputTap, X: 120, Y: 200}, now, state, power)
 		if u.page == pageUpdate {
 			t.Fatal("unsafe state opened update")
 		}
@@ -169,9 +169,10 @@ func TestTouchWakeSettingDefaultsOffAndRepaints(t *testing.T) {
 	}
 	u.handle(inputEvent{Kind: inputSwipeLeft}, now, firmwareConfirmed, powerStatus{})
 	before := u.frameKey(now, powerStatus{})
-	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 196}, now, firmwareConfirmed, powerStatus{})
-	tap := inputEvent{Kind: inputTap, X: 120, Y: 80}
+	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 154}, now, firmwareConfirmed, powerStatus{})
+	tap := inputEvent{Kind: inputTap, X: 120, Y: 154}
 	u.handle(tap, now, firmwareConfirmed, powerStatus{})
+	u.handle(inputEvent{Kind: inputTap, X: 177, Y: 210}, now, firmwareConfirmed, powerStatus{})
 	if !u.touchWake || u.page != pageDisplaySettings || u.frameKey(now, powerStatus{}) == before {
 		t.Fatal("toggle did not enable/repaint in settings")
 	}

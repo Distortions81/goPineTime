@@ -930,6 +930,32 @@ static void phone_complete_pairing(bool wrong_code, bool fail_identity) {
 #include "host_update_tuning.h"
 #include "host_prepare_writes.h"
 #include "host_mode_payload.h"
+// Compare the bounded formatter with the pinned implementation, including
+// leading zeroes, UUID endianness, unknown types and the terminator boundary.
+extern char *gopine_upstream_uuid_to_str(const ble_uuid_t *, char *);
+static void uuid_formatting(void) {
+    uint32_t random=1;
+    for(unsigned i=0;i<65536;i++) {
+        ble_uuid16_t short_uuid=BLE_UUID16_INIT(i);
+        ble_uuid32_t word_uuid=BLE_UUID32_INIT(random);
+        ble_uuid128_t long_uuid=BLE_UUID128_INIT(0);
+        for(unsigned j=0;j<16;j++) {
+            random=random*1664525u+1013904223u;
+            long_uuid.value[j]=random>>24;
+        }
+        ble_uuid_t unknown={0};
+        const ble_uuid_t *cases[]={&short_uuid.u,&word_uuid.u,&long_uuid.u,&unknown};
+        for(unsigned j=0;j<4;j++) {
+            char expected[40],actual[40];
+            memset(expected,0x5a,sizeof(expected));memset(actual,0x5a,sizeof(actual));
+            assert(gopine_upstream_uuid_to_str(cases[j],expected+1)==expected+1);
+            assert(ble_uuid_to_str(cases[j],actual+1)==actual+1);
+            assert(!memcmp(expected,actual,sizeof(actual)));
+        }
+    }
+    puts("UUID formatting: 262144 upstream comparisons and buffer guards passed");
+}
+
 int main(int argc,char **argv) {
     setbuf(stdout,NULL);
     if(argc==3 && !strcmp(argv[1],"--service-changed-reboot"))
@@ -944,6 +970,9 @@ int main(int argc,char **argv) {
     ota_pipeline();
     ota_prepared_writes();
     mode_payload_lifecycle();
+    mode_payload_budget();
+    uuid_formatting();
+    ota_ignores_suspended_notification_wakeups();
     uint16_t original_battery=0,original_music=0;
     int original_attrs=0,original_services=0,original_configs=0;
     for(unsigned i=0;i<100;i++) {

@@ -72,8 +72,8 @@ func TestInfiniLinkWireValuesReachSharedPhoneFeatures(t *testing.T) {
 				t.Fatal("InfiniLink metadata did not reach music", u.phone)
 			}
 			if u.notifications == nil || u.notifications.inbox.Count != 1 ||
-				notifications.Text(u.notifications.inbox.Messages[0].Title[:]) != "Calendar" ||
-				notifications.Text(u.notifications.inbox.Messages[0].Body[:]) != "Review at noon" {
+				notifications.Text(u.notifications.inbox.At(0).Title[:]) != "Calendar" ||
+				notifications.Text(u.notifications.inbox.At(0).Body[:]) != "Review at noon" {
 				t.Fatal("InfiniLink alert did not reach inbox", u.notifications)
 			}
 			c.update(&u, now.Add(time.Second), 80)

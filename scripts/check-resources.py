@@ -32,6 +32,47 @@ BLE_CRYPTO_FRAMES = (
     "ble_ll_sched_conn_reschedule", "ble_ll_conn_end",
 )
 
+MEMORY_TYPES = (
+    "main.watchUI", "main.notificationState", "main.phoneState", "main.weatherState",
+    "main.directUpdater", "main.updateWorkspace", "main.settingsPersistence",
+    "main.timerResume", "main.frameRenderer", "main.pineTimeDisplay",
+    "github.com/Distortions81/goPine/internal/ota.Receiver",
+    "github.com/Distortions81/goPine/internal/notifications.Inbox",
+    "github.com/Distortions81/goPine/internal/notifications.Message",
+)
+
+
+def object_sizes(text, names=MEMORY_TYPES):
+    """Read target object sizes, not host Go sizes or measured live heap."""
+    entries = {}
+    named = {}
+    for match in re.finditer(r"^0x([0-9a-f]+):[^\n]*DW_TAG_([^\n]+)\n(.*?)(?=^0x[0-9a-f]+:|\Z)", text, re.M | re.S):
+        address, kind, body = match.groups()
+        size = re.search(r"DW_AT_byte_size\s+\((0x[0-9a-f]+|\d+)\)", body)
+        target = re.search(r"DW_AT_type\s+\((0x[0-9a-f]+)", body)
+        entries[int(address, 16)] = (int(size[1], 0) if size else None,
+                                     int(target[1], 16) if target and kind.strip() == "typedef" else None)
+        name = re.search(r'DW_AT_name\s+\("([^"\n]+)"\)', body)
+        if name and name[1] in names:
+            named[name[1]] = int(address, 16)
+    result = {}
+    for name, address in named.items():
+        seen = set()
+        while address in entries and address not in seen:
+            seen.add(address)
+            size, address = entries[address]
+            if size is not None:
+                result[name] = size
+                break
+    return result
+
+
+def recycling_allocations(text):
+    # The compiler filter selects Receiver, ValidateWithScratch and Inbox
+    # methods. Their owned storage is created by callers, outside hot paths.
+    return [line for line in text.splitlines() if "object allocated on the heap" in line
+            and re.search(r"internal/(?:ota/(?:receiver|image)|notifications/notifications)\.go:", line)]
+
 
 def parse_c_frames(text):
     frames = {}
@@ -62,6 +103,33 @@ def largest_ram_symbols(text, limit=20):
             if 0x20000000 <= address < 0x20010000 and size:
                 objects.append({"name": match[4], "bytes": size})
     return sorted(objects, key=lambda value: (-value["bytes"], value["name"]))[:limit]
+
+
+def linked_dependencies(text):
+    """Selected symbol groups, excluding aliases and compiler-inlined code."""
+    groups = {name: {"flash_symbol_bytes": 0, "ram_symbol_bytes": 0} for name in
+              ("time", "reflection", "text_and_numbers", "libc_formatting")}
+    seen = set()
+    for line in text.splitlines():
+        match = re.fullmatch(r"([0-9a-fA-F]+) ([0-9a-fA-F]+) ([a-zA-Z]) (.+)", line.strip())
+        if not match:
+            continue
+        address, size, name = int(match[1], 16), int(match[2], 16), match[4]
+        group = None
+        if name.startswith(("time.", "(time.", "(*time.")):
+            group = "time"
+        elif name.startswith(("reflect/", "reflect.", "internal/reflectlite.", "(internal/reflectlite.", "(*internal/reflectlite.", "runtime.reflect", "runtime.interfaceEqual")):
+            group = "reflection"
+        elif name.startswith(("strings.", "strconv.", "internal/strconv.", "unicode", "bytes.")):
+            group = "text_and_numbers"
+        elif name in ("sprintf", "snprintf", "vsprintf", "vsnprintf", "vfprintf", "__i_vfprintf"):
+            group = "libc_formatting"
+        if group is None or not size or (address, size) in seen:
+            continue
+        seen.add((address, size))
+        key = "ram_symbol_bytes" if 0x20000000 <= address < 0x20010000 else "flash_symbol_bytes"
+        groups[group][key] += size
+    return groups
 
 
 def parse_frames(text):
@@ -134,7 +202,7 @@ def audit(symbols, by_address, task_stack, c_frames=None):
     paths["phone_time"] = phone + frame("(*main.timeSyncController).receivePhoneTime", False) + max(
         frame("(main.pineTimeRadio).Take", False), frame("github.com/Distortions81/goPine/internal/timesync.Decode", False),
         frame("github.com/Distortions81/goPine/internal/timesync.Normalize", False))
-    verify = frame("(*github.com/Distortions81/goPine/internal/ota.Receiver).Verify", False) + frame("github.com/Distortions81/goPine/internal/ota.Validate", False)
+    verify = frame("(*github.com/Distortions81/goPine/internal/ota.Receiver).Verify", False) + frame("github.com/Distortions81/goPine/internal/ota.ValidateWithScratch", False)
     paths["direct_update"] = live + frame("(*main.directUpdater).tick", False) + max(
         frame("(*github.com/Distortions81/goPine/internal/ota.Receiver).Write", False),
         frame("(*github.com/Distortions81/goPine/internal/ota.Receiver).Begin", False) + frame("github.com/Distortions81/goPine/internal/ota.checkErasedTrailer", False), verify)
@@ -172,6 +240,8 @@ def audit(symbols, by_address, task_stack, c_frames=None):
         errors.append("Standard CRC linked into firmware; its slicing table allocates 8 KiB of heap")
     if "(time.Time).Format" in symbols:
         errors.append("General time formatting linked into firmware; use the fixed UI formats")
+    if any(name in symbols for name in ("sprintf", "snprintf", "vsprintf", "vsnprintf", "vfprintf", "__i_vfprintf", "gopine_upstream_uuid_to_str")):
+        errors.append("Generic C formatting linked into firmware; use the bounded UUID formatter")
     for name, size in paths.items():
         if size + RESERVE > task_stack:
             errors.append(f"{name}: core frames {size} + reserve {RESERVE} > stack {task_stack}")
@@ -196,6 +266,7 @@ def main():
     parser.add_argument("elf", type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--ble-stack-usage", type=Path)
+    parser.add_argument("--allocations", type=Path)
     args = parser.parse_args()
 
     def output(tool, *options):
@@ -207,7 +278,15 @@ def main():
     c_frames = parse_c_frames(args.ble_stack_usage.read_text()) if args.ble_stack_usage else None
     result = audit(symbols, frames, stack, c_frames)
     result["elf"] = str(args.elf)
-    result["largest_static_ram_symbols"] = largest_ram_symbols(output("llvm-nm", "--print-size"))
+    sized_symbols = output("llvm-nm", "--print-size")
+    result["largest_static_ram_symbols"] = largest_ram_symbols(sized_symbols)
+    result["linked_dependency_groups"] = linked_dependencies(sized_symbols)
+    result["dependency_size_limitation"] = "Selected named symbols only; inlined code is charged to callers, aliases are deduplicated. Not total dependency cost or heap usage."
+    result["target_object_sizes_bytes"] = object_sizes(output("llvm-dwarfdump", "--debug-info"))
+    result["object_size_limitation"] = "Raw ARM object sizes; excludes allocator rounding, GC metadata, object counts and temporary allocations. Not measured free heap."
+    if args.allocations:
+        result["recycling_allocations"] = recycling_allocations(args.allocations.read_text())
+        result["errors"].extend("Recycling path allocates: " + line for line in result["recycling_allocations"])
     if args.report:
         args.report.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))

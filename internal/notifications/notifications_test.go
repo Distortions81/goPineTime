@@ -20,7 +20,7 @@ func TestCompanionPackets(t *testing.T) {
 		if !b.Add(wire(tc.text)) {
 			t.Fatal(tc.text)
 		}
-		m := &b.Messages[0]
+		m := b.At(0)
 		if Text(m.Title[:]) != tc.title || Text(m.Body[:]) != tc.body || b.Unread() != 1 {
 			t.Fatalf("%q: %q / %q", tc.text, Text(m.Title[:]), Text(m.Body[:]))
 		}
@@ -31,7 +31,7 @@ func TestCompanionPackets(t *testing.T) {
 			t.Fatal("invalid packet mutated inbox")
 		}
 	}
-	if !b.Add(wire(string(bytes.Repeat([]byte{'W'}, 50))+"\x00body")) || string(b.Messages[0].Title[37:]) != "..." {
+	if !b.Add(wire(string(bytes.Repeat([]byte{'W'}, 50))+"\x00body")) || string(b.At(0).Title[37:]) != "..." {
 		t.Fatal("title truncation")
 	}
 }
@@ -43,21 +43,21 @@ func TestInboxReplacementReadDismissAndClear(t *testing.T) {
 			t.Fatal(i)
 		}
 	}
-	if b.Count != Capacity || Text(b.Messages[0].Body[:]) != "F" || Text(b.Messages[3].Body[:]) != "C" {
+	if b.Count != Capacity || Text(b.At(0).Body[:]) != "F" || Text(b.At(3).Body[:]) != "C" {
 		t.Fatal("replacement order")
 	}
-	id := b.Messages[2].ID
+	id := b.At(2).ID
 	b.Read(id)
 	if b.Unread() != 3 || b.Find(id).Unread {
 		t.Fatal("read")
 	}
 	b.Dismiss(id)
-	if b.Find(id) != nil || b.Count != 3 || Text(b.Messages[2].Body[:]) != "C" || b.Messages[3] != (Message{}) {
+	if b.Find(id) != nil || b.Count != 3 || Text(b.At(2).Body[:]) != "C" || b.At(3) != nil {
 		t.Fatal("dismiss order or retained text")
 	}
 	b.Dismiss(1000)
 	b.Clear()
-	if b.Count != 0 || b.Unread() != 0 || b.Messages != ([Capacity]Message{}) {
+	if b.Count != 0 || b.Unread() != 0 || b.messages != ([Capacity]Message{}) {
 		t.Fatal("clear retained text")
 	}
 }
@@ -81,7 +81,7 @@ func FuzzInbox(f *testing.F) {
 		if b.Count != 1 || b.Unread() != 1 {
 			t.Fatal("invalid state")
 		}
-		for _, text := range [][]byte{b.Messages[0].Title[:], b.Messages[0].Body[:]} {
+		for _, text := range [][]byte{b.At(0).Title[:], b.At(0).Body[:]} {
 			for _, c := range text {
 				if c != 0 && (c < 32 || c > 126) {
 					t.Fatal("unsupported text survived")

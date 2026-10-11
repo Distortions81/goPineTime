@@ -127,7 +127,10 @@ func TestPhoneDefaultsOffAndAutoConnectionSurvivesSleep(t *testing.T) {
 		t.Fatal("opening music started Bluetooth")
 	}
 	u.openPhone()
-	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 154}, now, firmwareConfirmed, powerStatus{})
+	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 110}, now, firmwareConfirmed, powerStatus{})
+	if u.page == pageBatteryConfirm {
+		u.handle(inputEvent{Kind: inputTap, X: 177, Y: 210}, now, firmwareConfirmed, powerStatus{})
+	}
 	c.update(&u, now, 73)
 	if r.starts != 1 || r.window != 0 || !u.phoneAuto {
 		t.Fatal("auto connection not enabled")
@@ -372,11 +375,51 @@ func TestRepeatedConnectDoesNotRestartSharedRadio(t *testing.T) {
 	r := &fakePhoneRadio{}
 	c := timeSyncController{radio: r}
 	for i := 0; i < 3; i++ {
-		u.handle(inputEvent{Kind: inputTap, X: 120, Y: 154}, now.Add(time.Duration(i)*time.Minute), firmwareConfirmed, powerStatus{})
+		u.handle(inputEvent{Kind: inputTap, X: 120, Y: 110}, now.Add(time.Duration(i)*time.Minute), firmwareConfirmed, powerStatus{})
+		if u.page == pageBatteryConfirm {
+			u.handle(inputEvent{Kind: inputTap, X: 177, Y: 210}, now.Add(time.Duration(i)*time.Minute), firmwareConfirmed, powerStatus{})
+		}
 		c.update(&u, now.Add(time.Duration(i)*time.Minute), 73)
 	}
 	if r.starts != 1 || r.stops != 0 || r.window != 0 || !u.phoneAuto {
 		t.Fatal("repeated Connect reset shared connection")
+	}
+}
+
+func TestBluetoothControlsKeepNavigationSeparateFromConnection(t *testing.T) {
+	now := time.Now()
+	u := phoneUI(now, phoneOff)
+	u.openPhone()
+	before := *u.phone
+	// The old header action and the disabled off button must be inert. The
+	// gaps between the new rows must not activate neighboring controls either.
+	for _, tap := range []inputEvent{
+		{Kind: inputTap, X: 200, Y: 25},
+		{Kind: inputTap, X: 120, Y: 206},
+		{Kind: inputTap, X: 120, Y: 134},
+		{Kind: inputTap, X: 120, Y: 182},
+	} {
+		u.handle(tap, now, firmwareConfirmed, powerStatus{})
+		if u.page != pagePhone || u.phoneAuto || *u.phone != before {
+			t.Fatal("inactive Bluetooth control changed connection state", tap)
+		}
+	}
+	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 158}, now, firmwareConfirmed, powerStatus{})
+	if u.page != pagePairingSettings || u.phoneAuto || *u.phone != before {
+		t.Fatal("Paired devices changed connection state")
+	}
+	u.handle(inputEvent{Kind: inputSwipeRight}, now, firmwareConfirmed, powerStatus{})
+	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 110}, now, firmwareConfirmed, powerStatus{})
+	if u.page == pageBatteryConfirm {
+		u.handle(inputEvent{Kind: inputTap, X: 177, Y: 210}, now, firmwareConfirmed, powerStatus{})
+	}
+	if u.page != pagePhone || !u.phoneAuto || u.phone.mode != phoneConnected ||
+		!u.phone.advertiseRequested || u.phone.setupUntil != now.Add(phoneSetupDuration) {
+		t.Fatal("Turn on did not open the existing persistent pairing window")
+	}
+	u.handle(inputEvent{Kind: inputTap, X: 120, Y: 206}, now, firmwareConfirmed, powerStatus{})
+	if u.phoneAuto || u.phone.mode != phoneOff || !u.phone.setupUntil.IsZero() {
+		t.Fatal("Turn off did not disable the connection preference")
 	}
 }
 
@@ -391,7 +434,7 @@ func TestPhoneSetupRefreshesExistingAdvertisingWithoutRestart(t *testing.T) {
 	if r.setups != 1 || r.starts != 1 || r.stops != 0 {
 		t.Fatal("opening Phone did not renew advertising in place", r)
 	}
-	u.handlePhone(inputEvent{Kind: inputTap, X: 120, Y: 154}, now.Add(2*time.Second), firmwareConfirmed)
+	u.handlePhone(inputEvent{Kind: inputTap, X: 120, Y: 110}, now.Add(2*time.Second), firmwareConfirmed)
 	c.update(&u, now.Add(2*time.Second), 80)
 	if r.setups != 2 || r.starts != 1 || r.stops != 0 {
 		t.Fatal("CONNECT PHONE restarted the security exchange", r)

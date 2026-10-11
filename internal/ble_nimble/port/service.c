@@ -1125,7 +1125,7 @@ int gopine_ble_updates(void) {
     // Input waits only pump controller work. Timed per-peer work must return
     // to the host poll as well as limiting its idle delay.
     if(lifecycle_changed || (gopine_ble_busy() &&
-       (gopine_ble_host_work_pending() || gopine_bond_delay()==0)) || gopine_ancs_updates())return 1;
+       (gopine_ble_host_work_pending() || gopine_bond_delay()==0)) || (!update_window && gopine_ancs_updates()))return 1;
     if(!window)return 0;
     if(failure || pending || (update_window && update_pending(&update_incoming)))return 1;
     if(update_window && update_links_delay(&update_links,ble_npl_time_get())==0)return 1;

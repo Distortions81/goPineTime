@@ -29,8 +29,8 @@ def main():
     sources = list(dict.fromkeys(vendor / 'src' / s for s in re.findall(r'libs/[^\s]+\.c', section)))
     sources = [s for s in sources if '/host/' in str(s) or '/transport/ram/' in str(s)
                or s.name in ('os_mbuf.c', 'os_mempool.c', 'mem.c', 'endian.c', 'os_msys_init.c')]
-    sources = [s for s in sources if s.name not in ('ble_sm.c', 'ble_gatts.c', 'ble_hs_stop.c', 'ble_store_ram.c')]
-    sources += [port / name for name in ('npl.c', 'alloc.c', 'stop.c', 'sm.c', 'gatts.c', 'bond.c', 'ancs.c', 'privacy.c')]
+    sources = [s for s in sources if s.name not in ('ble_sm.c', 'ble_gatts.c', 'ble_hs_stop.c', 'ble_store_ram.c', 'ble_uuid.c')]
+    sources += [port / name for name in ('npl.c', 'alloc.c', 'stop.c', 'sm.c', 'gatts.c', 'bond.c', 'ancs.c', 'privacy.c', 'uuid.c')]
     sources += [tests / 'host_test.c']
     includes = [tests / 'host', tests, port / 'include']
     includes += [nimble / path for path in (

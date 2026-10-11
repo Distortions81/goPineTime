@@ -1,5 +1,44 @@
 # Memory, rendering, and firmware size
 
+## Candidate 0.3.32: dependency audit (2026-10-11)
+
+The [linked-code audit](releases/0.3.32.md) removes 1,504 flash bytes by replacing
+Bluetooth UUID `sprintf` calls with bounded hexadecimal formatting, preserving
+all wire operations. Its formatter frame falls from 112 to 24 bytes. A separate
+experiment replacing `encoding/binary` with seven vendored primitives saved only
+8 bytes and was discarded. The ELF report now breaks down time, reflection/type
+metadata, text/numeric helpers, and general C formatting; the latter must remain
+absent. Existing Go formatting/crypto/CRC guards are retained.
+
+Battery confirmation UI occupies existing padding, leaving the UI at 712 bytes.
+Static RAM, heap region, and selected stack budgets remain unchanged from 0.3.31.
+The final image is 296,260 bytes and has not been flashed.
+
+## Candidate 0.3.31: recycled storage and exclusive OTA (2026-10-11)
+
+The [0.3.31 measurements](releases/0.3.31.md) compare the preceding display/UI
+candidate with the same version/date/time values. Code plus data falls by 4,228
+bytes. Static RAM is unchanged: 22,132 bytes reserved, 43,404-byte heap region.
+The updater uses 512 fewer raw object bytes before first OTA; after first use its
+cached workspace brings retained storage to 584 bytes, 24 more than before.
+This reduces allocation churn rather than claiming a smaller active-update heap.
+
+The receiver reuses its readback buffer for all synchronous validation reads,
+and notification slots move indices instead of whole records. The BLE build now
+checks TinyGo allocation diagnostics for these paths and includes ARM object
+sizes from the exact ELF's DWARF. The checked direct-update stack path falls
+from 4,744 to 3,928 bytes; notification handling falls from 4,752 to 4,520 bytes.
+The largest selected path plus the 2,048-byte reserve is 7,968 of 8,192 bytes.
+These checks do not measure physical free heap or bound every mixed Go/C call.
+
+Exclusive OTA defers background feature callbacks and settings writes, suppresses
+alarm/PIN overlays and vibration, and removes suspended notification wakeups.
+Power, input, host pumping, and watchdog servicing continue. Automated lifecycle
+tests verify cancellation restores normal work without losing the overdue timer.
+No upload window increase is included; four queued packets would require only
+12 raw bytes beyond the existing 984-byte shared payload, while twenty would
+require 3,980 more bytes before alignment. This candidate has not been flashed.
+
 ## Charger-wake candidate 0.3.14 (2026-10-09, boot/KEEP confirmed)
 
 Adds two PORT/SENSE charger inputs, a one-shot 150 ms debounce, and a full-screen

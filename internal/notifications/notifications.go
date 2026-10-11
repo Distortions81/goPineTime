@@ -28,8 +28,8 @@ func (b *Inbox) ApplyApple(packet []byte) (changed, buzz bool) {
 	}
 	if packet[4] == 3 {
 		for i := b.Count - 1; i >= 0; i-- {
-			if b.Messages[i].Apple && b.Messages[i].AppleSource == packet[147] {
-				b.Dismiss(b.Messages[i].ID)
+			if b.At(i).Apple && b.At(i).AppleSource == packet[147] {
+				b.Dismiss(b.At(i).ID)
 				changed = true
 			}
 		}
@@ -38,41 +38,32 @@ func (b *Inbox) ApplyApple(packet []byte) (changed, buzz bool) {
 	uid := uint32(packet[0]) | uint32(packet[1])<<8 | uint32(packet[2])<<16 | uint32(packet[3])<<24
 	existing := -1
 	for i := 0; i < b.Count; i++ {
-		if b.Messages[i].Apple && b.Messages[i].AppleSource == packet[147] && b.Messages[i].RemoteID == uid {
+		if b.At(i).Apple && b.At(i).AppleSource == packet[147] && b.At(i).RemoteID == uid {
 			existing = i
 			break
 		}
 	}
 	if packet[4] == 2 {
 		if existing >= 0 {
-			b.Dismiss(b.Messages[existing].ID)
+			b.Dismiss(b.At(existing).ID)
 			return true, false
 		}
 		return false, false
 	}
-	m := Message{Apple: true, AppleSource: packet[147], RemoteID: uid, Unread: true, Category: appleCategory(packet[5])}
-	clean(m.Title[:], packet[7:47])
-	clean(m.Body[:], packet[47:147])
-	if m.Title[0] == 0 && m.Body[0] == 0 {
+	if !hasText(packet[7:47]) && !hasText(packet[47:147]) {
 		return false, false
 	}
+	var m *Message
 	if existing >= 0 {
-		m.ID = b.Messages[existing].ID
-		m.Unread = b.Messages[existing].Unread
-		b.Messages[existing] = m
+		m = b.At(existing)
 		b.Revision++
 	} else {
-		b.Revision++
-		if b.Revision == 0 {
-			b.Revision++
-		}
-		m.ID = b.Revision
-		for i := min(b.Count, Capacity-1); i > 0; i-- {
-			b.Messages[i] = b.Messages[i-1]
-		}
-		b.Messages[0] = m
-		b.Count = min(b.Count+1, Capacity)
+		m = b.insert()
 	}
+	m.Apple, m.AppleSource, m.RemoteID, m.Category = true, packet[147], uid, appleCategory(packet[5])
+	clean(m.Title[:], packet[7:47])
+	clean(m.Body[:], packet[47:147])
+
 	// Silent and pre-existing notifications populate the inbox without buzzing.
 	return true, packet[4] == 0 && existing < 0 && packet[6]&5 == 0
 }
@@ -95,7 +86,8 @@ func appleCategory(category byte) byte {
 }
 
 type Inbox struct {
-	Messages [Capacity]Message // Newest first.
+	messages [Capacity]Message // Stable slots, recycled on dismissal or eviction.
+	order    [Capacity]uint8   // Newest first; only indices move.
 	Count    int
 	Revision uint32
 }
@@ -107,7 +99,6 @@ func (b *Inbox) Add(packet []byte) bool {
 	if len(packet) < 4 || len(packet) > MaxPacket {
 		return false
 	}
-	m := Message{Category: packet[0], Unread: true}
 	text := packet[3:]
 	split := -1
 	for i, c := range text {
@@ -116,29 +107,67 @@ func (b *Inbox) Add(packet []byte) bool {
 			break
 		}
 	}
+	var title, body []byte
 	if split >= 0 && split < len(text)-1 {
-		clean(m.Title[:], text[:split])
-		clean(m.Body[:], text[split+1:])
+		title, body = text[:split], text[split+1:]
 	} else {
-		clean(m.Body[:], text)
+		body = text
 	}
-	if m.Title[0] == 0 && m.Body[0] == 0 {
+	// Validate before recycling a live slot: an empty packet must not evict
+	// the oldest message or destroy an existing ANCS notification.
+	if !hasText(title) && !hasText(body) {
 		return false
 	}
+	m := b.insert()
+	m.Category = packet[0]
+	clean(m.Title[:], title)
+	clean(m.Body[:], body)
+	return true
+}
+
+// At returns a borrowed slot. It stays put while other messages are inserted
+// or dismissed, but is invalid after this message is removed or evicted.
+func (b *Inbox) At(index int) *Message {
+	if index < 0 || index >= b.Count {
+		return nil
+	}
+	return &b.messages[b.order[index]]
+}
+
+func (b *Inbox) insert() *Message {
+	slot := uint8(0)
+	if b.Count == Capacity {
+		slot = b.order[b.Count-1]
+	} else {
+		for b.messages[slot].ID != 0 {
+			slot++
+		}
+		b.Count++
+	}
+	copy(b.order[1:b.Count], b.order[:b.Count-1])
+	b.order[0] = slot
 	b.Revision++
 	if b.Revision == 0 {
 		b.Revision++
 	}
-	m.ID = b.Revision
-	for i := min(b.Count, Capacity-1); i > 0; i-- {
-		b.Messages[i] = b.Messages[i-1]
+	m := &b.messages[slot]
+	*m = Message{ID: b.Revision, Unread: true}
+	return m
+}
+
+func hasText(data []byte) bool {
+	for len(data) > 0 && data[0] != 0 {
+		r, size := utf8.DecodeRune(data)
+		if r > 32 && r != 127 {
+			return true
+		}
+		data = data[size:]
 	}
-	b.Messages[0] = m
-	b.Count = min(b.Count+1, Capacity)
-	return true
+	return false
 }
 
 func clean(out, data []byte) {
+	clear(out)
 	n := 0
 	for len(data) > 0 && data[0] != 0 {
 		r, size := utf8.DecodeRune(data)
@@ -198,8 +227,8 @@ func CategoryLabel(category byte) string {
 
 func (b *Inbox) Find(id uint32) *Message {
 	for i := 0; i < b.Count; i++ {
-		if b.Messages[i].ID == id {
-			return &b.Messages[i]
+		if b.At(i).ID == id {
+			return b.At(i)
 		}
 	}
 	return nil
@@ -213,7 +242,7 @@ func (b *Inbox) Read(id uint32) {
 func (b *Inbox) Unread() int {
 	n := 0
 	for i := 0; i < b.Count; i++ {
-		if b.Messages[i].Unread {
+		if b.At(i).Unread {
 			n++
 		}
 	}
@@ -221,18 +250,22 @@ func (b *Inbox) Unread() int {
 }
 func (b *Inbox) Dismiss(id uint32) {
 	for i := 0; i < b.Count; i++ {
-		if b.Messages[i].ID != id {
+		if b.At(i).ID != id {
 			continue
 		}
-		copy(b.Messages[i:], b.Messages[i+1:b.Count])
+		*b.At(i) = Message{}
+		copy(b.order[i:], b.order[i+1:b.Count])
 		b.Count--
-		b.Messages[b.Count] = Message{}
+		b.order[b.Count] = 0
 		b.Revision++
 		return
 	}
 }
 func (b *Inbox) Clear() {
-	b.Messages = [Capacity]Message{}
+	for i := range b.messages {
+		b.messages[i] = Message{}
+	}
+	clear(b.order[:])
 	b.Count = 0
 	b.Revision++
 }

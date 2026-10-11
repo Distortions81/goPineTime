@@ -109,20 +109,16 @@ func (u *watchUI) handlePhone(e inputEvent, now time.Time, state updateState) {
 		return
 	}
 	if u.page == pagePhone {
-		if inRect(e, 170, 0, 240, 44) {
-			u.openPairingSettings()
-			return
-		}
 		switch {
-		case inRect(e, 16, 128, 224, 174):
-			u.phoneAuto, p.mode = true, phoneConnected
-			p.setupUntil, p.setupRequested = now.Add(phoneSetupDuration), false
-			p.retryAt = time.Time{}
-			p.advertiseRequested = true
-			if p.music.Link == music.LinkDisconnected {
-				p.status = "Waiting for phone"
+		case inRect(e, 16, 88, 224, 132):
+			if !u.phoneAuto && p.mode == phoneOff {
+				u.askBattery(batteryBluetooth)
+			} else {
+				u.enablePhone(now)
 			}
-		case inRect(e, 16, 182, 224, 228):
+		case inRect(e, 16, 136, 224, 180):
+			u.openPairingSettings()
+		case inRect(e, 16, 184, 224, 228) && (u.phoneAuto || p.mode != phoneOff):
 			u.phoneAuto, p.mode = false, phoneOff
 			p.setupUntil, p.setupRequested = time.Time{}, false
 			p.status = "Bluetooth off"
@@ -160,6 +156,17 @@ func (u *watchUI) handlePhone(e inputEvent, now time.Time, state updateState) {
 	}
 	// At most one pending gesture; never replay a command after disconnect.
 	p.command, p.queued = command, true
+}
+
+func (u *watchUI) enablePhone(now time.Time) {
+	p := u.phone
+	u.phoneAuto, p.mode = true, phoneConnected
+	p.setupUntil, p.setupRequested = now.Add(phoneSetupDuration), false
+	p.retryAt = time.Time{}
+	p.advertiseRequested = true
+	if p.music.Link == music.LinkDisconnected {
+		p.status = "Waiting for device"
+	}
 }
 func radioBusy(r timeRadio) bool {
 	if busy, ok := r.(interface{ Busy() bool }); ok {
@@ -235,7 +242,7 @@ func (c *timeSyncController) updatePhone(u *watchUI, now time.Time, battery uint
 		}
 		switch p.music.Link {
 		case music.LinkDisconnected:
-			p.status = "Waiting for phone"
+			p.status = "Waiting for device"
 		case music.LinkSecuring:
 			p.status = "Securing connection"
 		case music.LinkMusicReady, music.LinkAuthenticated:
@@ -254,7 +261,7 @@ func (c *timeSyncController) updatePhone(u *watchUI, now time.Time, battery uint
 		case p.trustedPeers == 1:
 			p.status = "Connected"
 		default:
-			p.status = "Waiting for phone"
+			p.status = "Waiting for device"
 		}
 	}
 	if p.music.Link == music.LinkMusicReady && !p.announced {
@@ -353,35 +360,42 @@ func (u *watchUI) drawPhone(d canvas, now time.Time) {
 		return
 	}
 	if u.page == pagePhone {
-		centered(d, &uifont.Bold18, 29, "PHONE", white)
-		writeLine(d, &uifont.Regular18, 177, 29, "INFO", accent)
-		centered(d, &uifont.Regular18, 57, p.status, accent)
-		centered(d, &uifont.Regular18, 83, "Time, weather, music", muted)
-		centered(d, &uifont.Regular18, 108, "and notifications", muted)
-		label, on, off := "CONNECT PHONE", card, positive
-		if u.phoneAuto {
-			label, on, off = "AUTO CONNECT: ON", positive, card
+		centered(d, &uifont.Bold18, 29, "BLUETOOTH", white)
+		centered(d, &uifont.Regular18, 62, p.status, accent)
+		label := "Turn on"
+		on := u.phoneAuto || p.mode != phoneOff
+		if on {
+			label = "Pair a device"
 		}
-		clockControl(d, 16, 128, 208, 46, label, on)
-		clockControl(d, 16, 182, 208, 46, "BLUETOOTH OFF", off)
+		clockControl(d, 16, 88, 208, 44, label, positive)
+		clockControl(d, 16, 136, 208, 44, "Paired devices", card)
+		if on {
+			clockControl(d, 16, 184, 208, 44, "Turn off", card)
+		} else {
+			clockControlLabel(d, 16, 184, 208, 44, "Turn off", card, disabled)
+		}
 		return
 	}
 	centered(d, &uifont.Bold18, 29, "MUSIC", white)
 	status := p.musicStatus()
 	if p.mode == phoneOff {
-		status = "Pair in Settings > Phone"
+		status = "Bluetooth is off"
 	}
 	centered(d, &uifont.Regular18, 57, status, accent)
 	if textVisible(d, &uifont.Regular18, 85, "") {
 		track := music.Text(&p.music.Track)
-		if track == "" {
+		if p.mode == phoneOff {
+			track = "Settings > Bluetooth"
+		} else if track == "" {
 			track = "No track information"
 		}
 		centered(d, &uifont.Regular18, 85, fitMusicText(track), white)
 	}
 	if textVisible(d, &uifont.Regular18, 112, "") {
 		artist := music.Text(&p.music.Artist)
-		if p.music.Track[0] == 0 && p.music.Link == music.LinkMusicReady {
+		if p.mode == phoneOff {
+			artist = "to connect a device"
+		} else if p.music.Track[0] == 0 && p.music.Link == music.LinkMusicReady {
 			artist = "Tap here to refresh"
 		}
 		centered(d, &uifont.Regular18, 112, fitMusicText(artist), muted)

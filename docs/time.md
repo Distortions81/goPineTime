@@ -6,6 +6,12 @@ Version **0.3.15** adds secure pairing, persistent bond storage and a connected
 shutdown fix. See [InfiniLink pairing and hardware acceptance](pairing.md).
 Versioned sections below describe their original increments.
 
+In the current interface, pairing lives under **Settings → Bluetooth**. Tap
+**Turn on**, or **Pair a device** when already enabled. Time arrives automatically
+over an authenticated connection; manual controls remain under **Time & Date**.
+Music and Messages are in **Apps**. Weather is temporarily disabled in Apps,
+while its Bluetooth receiver remains available.
+
 ## Available in version 0.2.4
 
 Swipe left from the clock, open Time & Date, then choose Set Time or Set Date.

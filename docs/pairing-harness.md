@@ -20,7 +20,8 @@ use OTA for those diagnostic reads. The newer public Battery read does not
 establish a secure link. Phone failures remain in the watch's RAM ring until reboot or
 replacement by newer events. A partial or failed read fails the trace check.
 
-Probe mode needs **Settings → Phone → CONNECT PHONE**, with the phone app closed
+Probe mode needs **Settings → Bluetooth → Turn on** (or **Pair a device** when
+already enabled), with the phone app closed
 and no existing PC bond. It uses only **hci1 / C9:9E:15:7A:69:B4**, requests real
 Secure Connections pairing through its own KeyboardDisplay agent, waits for the
 central's PIN request, and deliberately rejects before entering a PIN or saving

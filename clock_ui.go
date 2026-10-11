@@ -91,12 +91,16 @@ func (u *watchUI) handleClockTap(e inputEvent, now time.Time) {
 }
 
 func clockControl(d canvas, x, y, w, h int16, label string, c color.RGBA) {
+	clockControlLabel(d, x, y, w, h, label, c, white)
+}
+
+func clockControlLabel(d canvas, x, y, w, h int16, label string, c, foreground color.RGBA) {
 	if !controlVisible(d, y, h, y+h/2+7) {
 		return
 	}
 	gfx.RoundBox(d, x, y, w, h, 6, c)
 	tw, _ := lineWidth(&uifont.Bold18, label)
-	writeLine(d, &uifont.Bold18, x+(w-int16(tw))/2, y+h/2+7, label, white)
+	writeLine(d, &uifont.Bold18, x+(w-int16(tw))/2, y+h/2+7, label, foreground)
 }
 
 func controlVisible(d canvas, y, height, baseline int16) bool {

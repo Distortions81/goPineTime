@@ -14,22 +14,22 @@ type Receiver struct {
 	erased                    uint32
 	verified, commitAttempted bool
 	Version                   [8]byte
-	readback                  [236]byte
+	scratch                   [256]byte
 }
 
 func (r *Receiver) Begin(f Flash, confirmed bool, total, session uint32) error {
 	if !confirmed || total < 80 || total > MaxImageSize || session == 0 {
 		return errors.New("invalid update request")
 	}
-	*r = Receiver{}
+	r.reset()
 	// Invalidate any old swap request before modifying a single image byte.
 	if err := f.EraseSector(Secondary + SlotSize - SectorSize); err != nil {
 		return err
 	}
-	if err := checkErasedTrailer(f); err != nil {
+	if err := checkErasedTrailer(f, r.scratch[:]); err != nil {
 		return err
 	}
-	*r = Receiver{flash: f, Total: total, Session: session}
+	r.flash, r.Total, r.Session = f, total, session
 	return nil
 }
 
@@ -50,11 +50,11 @@ func (r *Receiver) Write(session, offset uint32, data []byte) error {
 		}
 		// An acknowledged offset means the flash bytes were read back, not just
 		// accepted by the radio. A reconnect can resume at precisely this byte.
-		if err := readAt(r.flash, r.readback[:n], int64(Secondary)+int64(r.Offset)); err != nil {
+		if err := readAt(r.flash, r.scratch[:n], int64(Secondary)+int64(r.Offset)); err != nil {
 			return err
 		}
 		for i, b := range data[:n] {
-			if r.readback[i] != b {
+			if r.scratch[i] != b {
 				return errors.New("update readback failed")
 			}
 		}
@@ -68,7 +68,7 @@ func (r *Receiver) Verify(session uint32) error {
 	if r.flash == nil || session != r.Session || r.Offset != r.Total {
 		return errors.New("update incomplete")
 	}
-	image, err := Validate(r.flash, Secondary, int64(r.Total))
+	image, err := ValidateWithScratch(r.flash, Secondary, int64(r.Total), r.scratch[:])
 	if err != nil {
 		return err
 	}
@@ -96,11 +96,11 @@ func (r *Receiver) Commit(confirmed bool) error {
 	if err := writeAt(r.flash, BootMagic[:], Secondary+MagicOffset); err != nil {
 		return err
 	}
-	var magic [16]byte
-	if err := readAt(r.flash, magic[:], Secondary+MagicOffset); err != nil {
+	magic := r.scratch[:16]
+	if err := readAt(r.flash, magic, Secondary+MagicOffset); err != nil {
 		return err
 	}
-	if magic != BootMagic {
+	if [16]byte(magic) != BootMagic {
 		return errors.New("update commit failed")
 	}
 	return nil
@@ -113,21 +113,21 @@ func (r *Receiver) Cancel() error {
 		if err := r.flash.EraseSector(Secondary + SlotSize - SectorSize); err != nil {
 			return err
 		}
-		if err := checkErasedTrailer(r.flash); err != nil {
+		if err := checkErasedTrailer(r.flash, r.scratch[:]); err != nil {
 			return err
 		}
 	}
-	*r = Receiver{}
+	r.reset()
 	return nil
 }
 
-func checkErasedTrailer(f Flash) error {
-	var data [256]byte
+func checkErasedTrailer(f Flash, data []byte) error {
 	for offset := int64(Secondary + SlotSize - SectorSize); offset < Secondary+SlotSize; offset += int64(len(data)) {
-		if err := readAt(f, data[:], offset); err != nil {
+		chunk := data[:min(int64(len(data)), Secondary+SlotSize-offset)]
+		if err := readAt(f, chunk, offset); err != nil {
 			return err
 		}
-		for _, b := range data {
+		for _, b := range chunk {
 			if b != 255 {
 				return errors.New("update trailer not erased")
 			}
@@ -138,4 +138,14 @@ func checkErasedTrailer(f Flash) error {
 
 func (r *Receiver) VersionParts() (uint8, uint8, uint16, uint32) {
 	return r.Version[0], r.Version[1], binary.LittleEndian.Uint16(r.Version[2:]), binary.LittleEndian.Uint32(r.Version[4:])
+}
+
+// Reset metadata in place. A Receiver-sized composite temporary exceeds
+// TinyGo's stack allocation threshold and otherwise churns the heap on retry.
+func (r *Receiver) reset() {
+	r.flash = nil
+	r.Total, r.Offset, r.Session, r.erased = 0, 0, 0, 0
+	r.verified, r.commitAttempted = false, false
+	r.Version = [8]byte{}
+	clear(r.scratch[:])
 }

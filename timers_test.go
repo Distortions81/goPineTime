@@ -3,7 +3,76 @@ package main
 import (
 	"testing"
 	"time"
+
+	"github.com/Distortions81/goPine/internal/uifont"
 )
+
+func TestAppsGridNavigationAndGaps(t *testing.T) {
+	now := time.Unix(0, 0)
+	for _, tc := range []struct {
+		name string
+		x, y int16
+		want page
+	}{
+		{"Alarms", 63, 73, pageAlarms},
+		{"Stopwatch", 177, 73, pageStopwatch},
+		{"Timer", 63, 135, pageCountdown},
+		{"Music", 177, 135, pageMusic},
+		{"Messages", 63, 197, pageInbox},
+		{"Weather disabled", 177, 197, pageApps},
+		{"column gap", 120, 73, pageApps},
+		{"first row gap", 63, 104, pageApps},
+		{"second row gap", 177, 166, pageApps},
+		{"left margin", 11, 73, pageApps},
+		{"right margin", 228, 73, pageApps},
+		{"bottom margin", 63, 226, pageApps},
+		{"old inbox shortcut", 195, 25, pageApps},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := newWatchUI(firmwareConfirmed)
+			u.page = pageApps
+			u.handle(inputEvent{Kind: inputTap, X: tc.x, Y: tc.y}, now, firmwareConfirmed, powerStatus{})
+			if u.page != tc.want {
+				t.Fatalf("opened page %d, want %d", u.page, tc.want)
+			}
+			if u.weather != nil || u.phoneAuto || u.sync.Open || (u.phone != nil && u.phone.mode != phoneOff) {
+				t.Fatal("Apps navigation started a connection or weather session")
+			}
+			if tc.want != pageApps {
+				u.handle(inputEvent{Kind: inputSwipeRight}, now, firmwareConfirmed, powerStatus{})
+				if u.page != pageApps {
+					t.Fatal("app back gesture did not return to grid")
+				}
+			}
+		})
+	}
+}
+
+func TestAppsGridLabelsFitAndDrawingDoesNotAllocate(t *testing.T) {
+	for index := 0; index < 6; index++ {
+		width, _ := lineWidth(&uifont.Regular18, appCardLabel(index))
+		if width > uint32(appCardWidth-8) {
+			t.Fatalf("%s label width %d leaves less than four pixels padding", appCardLabel(index), width)
+		}
+	}
+	u := newWatchUI(firmwareConfirmed)
+	u.page = pageApps
+	now := time.Unix(0, 0)
+	d := &benchmarkDisplay{}
+	var renderer frameRenderer
+	draw := func(c canvas) { u.drawFrame(c, now, powerStatus{}) }
+	if err := renderer.render(d, draw); err != nil {
+		t.Fatal(err)
+	}
+	if got := testing.AllocsPerRun(20, func() {
+		u.frameKey(now, powerStatus{})
+		if err := renderer.render(d, draw); err != nil {
+			panic(err)
+		}
+	}); got != 0 {
+		t.Fatalf("Apps grid allocated %g times per frame", got)
+	}
+}
 
 func TestStopwatchPauseLapAndResume(t *testing.T) {
 	u := newWatchUI(firmwareConfirmed)

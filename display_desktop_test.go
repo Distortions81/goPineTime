@@ -87,6 +87,12 @@ func TestDesktopControlsAndRendering(t *testing.T) {
 		ui    watchUI
 		power powerStatus
 	}{
+		{"battery-touch", watchUI{page: pageBatteryConfirm, batteryChoice: batteryTouch, lightMode: false}, powerStatus{Percent: 73}},
+		{"battery-bluetooth", watchUI{page: pageBatteryConfirm, batteryChoice: batteryBluetooth, lightMode: false}, powerStatus{Percent: 73}},
+		{"battery-buzz", watchUI{page: pageBatteryConfirm, batteryChoice: batteryBuzz, lightMode: false}, powerStatus{Percent: 73}},
+		{"battery-high", watchUI{page: pageBatteryConfirm, batteryChoice: batteryHigh, lightMode: false}, powerStatus{Percent: 73}},
+		{"battery-medium", watchUI{page: pageBatteryConfirm, batteryChoice: batteryMedium, lightMode: false}, powerStatus{Percent: 73}},
+		{"battery-low-light", watchUI{page: pageBatteryConfirm, batteryChoice: batteryLow, lightMode: true}, powerStatus{Percent: 73}},
 		{"pairing-code", watchUI{page: pagePhone, pairing: &pairingState{code: 12346}}, powerStatus{Percent: 73}},
 		{"pairing-code-waiting", watchUI{page: pagePhone, pairing: &pairingState{code: 12346, progress: 0x200}}, powerStatus{Percent: 73}},
 		{"pairing-code-checking", watchUI{page: pagePhone, pairing: &pairingState{code: 12346, progress: 0x285}}, powerStatus{Percent: 73}},
@@ -112,6 +118,15 @@ func TestDesktopControlsAndRendering(t *testing.T) {
 		{"unplugged", watchUI{page: pageClock, powerNotice: true}, powerStatus{Percent: 68}},
 		{"clock-24h", watchUI{page: pageClock, use24: true}, powerStatus{Percent: 73}},
 		{"settings", watchUI{page: pageSettings}, powerStatus{Percent: 73}},
+		{"settings-light", watchUI{page: pageSettings, lightMode: true}, powerStatus{Percent: 73}},
+		{"display-dark", watchUI{page: pageDisplaySettings}, powerStatus{Percent: 73}},
+		{"display-light", watchUI{page: pageDisplaySettings, lightMode: true, brightness: brightnessMedium, touchWake: true}, powerStatus{Percent: 73}},
+		{"clock-light", watchUI{page: pageClock, lightMode: true}, powerStatus{Percent: 73}},
+		{"clock-light-charging", watchUI{page: pageClock, lightMode: true}, powerStatus{Percent: 68, State: chargeCharging}},
+		{"charging-light", watchUI{page: pageClock, lightMode: true, powerNotice: true}, powerStatus{Percent: 68, State: chargeCharging}},
+		{"pairing-light", watchUI{page: pagePhone, lightMode: true, pairing: &pairingState{code: 12346}}, powerStatus{Percent: 73}},
+		{"bluetooth-light", watchUI{page: pagePhone, lightMode: true, phoneAuto: true, phone: &phoneState{mode: phoneConnected, status: "Connected", music: music.State{Link: music.LinkAuthenticated}}}, powerStatus{Percent: 73}},
+		{"apps-light", watchUI{page: pageApps, lightMode: true}, powerStatus{Percent: 73}},
 		{"settings-touch-on", watchUI{page: pageDisplaySettings, touchWake: true}, powerStatus{Percent: 73}},
 		{"settings-pending", watchUI{page: pageSettings, settingsNote: "Save pending"}, powerStatus{Percent: 73}},
 		{"time-settings", watchUI{page: pageTimeSettings}, powerStatus{Percent: 73}},

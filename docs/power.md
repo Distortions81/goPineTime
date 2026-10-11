@@ -5,6 +5,31 @@ and side-button recovery continue working. These changes have host-test and
 firmware-build coverage; battery life and sleep current still need measurement
 on a watch.
 
+## Current display controls
+
+Candidate 0.3.33 displays a compact percentage and battery/charging icon at the
+top right on every screen, including pairing, update, and charging overlays.
+It uses existing power readings and redraw scheduling; it adds no battery polls
+or screen-awake requirement. The Settings battery footer is removed. Low battery
+uses the warning color; external power uses the accent color, with a bolt only
+while actively charging.
+
+**Settings → Display** groups the saved theme, brightness, touch-wake, and rotation
+controls. Theme toggles between Dark and Light. Brightness cycles through High,
+Low, and Medium; existing settings start at Dark and High. All three backlight
+channels still turn off during screen sleep. These choices do not change the
+15-second screen timeout or add background polling. Their physical brightness
+and battery impact still need watch measurements.
+
+Candidate 0.3.32 explains battery use before changing brightness or enabling
+touch wake, Bluetooth, or notification buzz. The proposal is applied only with
+**Confirm**; Cancel, swipe-back, focus cancellation, or screen sleep discards it.
+Disabling touch wake/Bluetooth or choosing Quiet applies immediately. Existing
+settings are retained and reconnecting an already enabled radio does not ask
+again. Quiet mutes vibration but retains notification reception. Text describes
+the cause of power use without unmeasured battery-life estimates. Theme and
+rotation do not show a battery confirmation.
+
 ## Charger wake screen (0.3.14, boot/KEEP confirmed)
 
 GPIO P0.12 (active-low charging) and P0.19 (active-low external power) now use

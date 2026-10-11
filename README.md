@@ -7,12 +7,15 @@ that uses the same clock and font rendering code as the watch build.
 The latest public release is **0.3.16**, which fixes a Linux Bluetooth pairing
 conflict during firmware updates. The browser updater selects the latest release
 automatically. Current source targets **0.3.29**, a candidate that brings time,
-weather, music, and supported notifications together under **Settings → Phone**,
+weather, music, and supported notifications together under **Settings → Bluetooth**,
 with a saved auto-connect preference and automatic time from the paired phone.
 It also includes in-app firmware updates, charger wake screens, and a saved
 flipped-screen option. Phone connections are opt-in. The candidate adds an ANCS
 client for iPhone notifications; the user has confirmed notification delivery,
 while completion of the InfiniLink connection remains unverified.
+The current interface groups tools and messages under **Apps**, temporarily
+disables its Weather button, and offers light/dark themes plus three brightness
+levels under **Settings → Display**.
 The [0.3.19 follow-up](docs/releases/0.3.19.md) keeps phone setup awake for two
 minutes and defers settings-save disconnects while pairing is in progress.
 The [0.3.20 follow-up](docs/releases/0.3.20.md) fixes a missed wake signal for
@@ -84,6 +87,13 @@ can be measured on a subsequent transfer.
 The [0.3.29 memory candidate](docs/releases/0.3.29.md) recovers 2 KiB of static RAM
 and removes repeated flash-driver allocations while retaining the same phone and
 OTA connection capacities. It has not been flashed.
+
+The [0.3.33 candidate](docs/releases/0.3.33.md) includes a compact battery indicator
+at the top right on every screen, the Display/Bluetooth UI
+cleanup, battery-use confirmations, recycled notification/OTA storage, exclusive
+update mode, and a measured dependency reduction. It was uploaded through the
+in-app updater on 2026-10-11; the watch verified all 296,036 bytes in a transfer
+lasting 177.9 seconds. INSTALL, boot, and KEEP have not been user-confirmed.
 
 Use the [browser updater](https://distortions81.github.io/goPineTime/) with goPine
 0.3.22 or newer already installed, or download the application ZIP from
@@ -180,8 +190,8 @@ or your own timezone). Set the correct time after flashing in **Settings →
 Time & Date**. Planned goPine OTA/revert resets now hand off the date/hour in
 flash and minutes/seconds in retention registers, with no periodic flash writes.
 Restored time is approximate: reboot/recovery time is not counted. Unexpected
-resets or power loss fall back to the build seed. In the 0.3.17 candidate,
-**Settings → Phone** accepts valid time updates automatically from the paired,
+resets or power loss fall back to the build seed. With Bluetooth enabled under
+**Settings → Bluetooth**, the watch accepts valid time updates automatically from the paired,
 authenticated, encrypted phone connection. The companion must send a fresh local
 time to reflect timezone or DST changes. Manual Time & Date controls remain
 available. The former standalone time proposal flow remains in the transport
@@ -198,7 +208,14 @@ prove the battery is full). The clock omits redundant power-status text and
 gesture hints; a small AM/PM sits beside the time on the same baseline.
 The estimate still comes from
 battery voltage, not a calibrated fuel gauge. The display and backlight turn off after
-15 seconds. **Settings → Display → Touch Wake** defaults to **Off** to save battery;
+15 seconds. Every screen shows a compact percentage and battery icon at the top
+right, with a bolt during active charging. Settings has no battery footer.
+**Settings → Display** offers **Theme: Dark/Light**, **Backlight:
+High/Low/Medium**, **Touch wake: Off/On**, and **Rotation: Normal/Flipped**.
+Changing brightness or enabling touch wake first shows battery-use information
+with **Cancel / Confirm**. Turning touch wake off is immediate. Existing settings
+default to Dark and High.
+**Touch wake** defaults to **Off** to save battery;
 the touch controller sleeps with the screen. Press the side button to wake the
 screen or turn it off immediately; a long press still allows a bootloader
 watchdog reset. Enable Touch to wake to also wake with a screen tap. Touch works
@@ -225,7 +242,8 @@ choice is now saved along with alarms and timers after a short edit delay.
 Time changes do not change sleep, touch-hold, or update-expiry timers.
 See [time and sync notes](docs/time.md) for limitations and the PC/phone plan.
 
-Swipe **right** from the clock to open **Apps**. Stopwatch supports lap,
+Swipe **right** from the clock to open **Apps**: Alarms, Stopwatch, Timer, Music,
+Messages, and a visibly disabled Weather button. Stopwatch supports lap,
 pause/resume, and reset. Countdown supports durations up to 23:59:59, pause/resume,
 and reset. Five alarms support once, daily, or weekdays. Alerts wake the display,
 pulse the vibration motor, and offer dismissal or a five-minute alarm snooze.
@@ -244,13 +262,17 @@ press and hold for three seconds to open **Ready to connect** inside goPine.
 The screen stays on, shows transfer progress, and offers Cancel throughout.
 After the watch verifies the image, tap **Install**, then **KEEP** after reboot.
 Brief Bluetooth disconnects can resume within the same transfer. The session
-expires after ten minutes without transfer activity; Cancel or an alarm ends it
+expires after ten minutes without transfer activity; Cancel ends it
 with the current firmware still running. At least 20% battery or external power
 is required. Normal phone connections pause when this update mode opens; the
 candidate resumes enabled auto-connect after leaving the update screens. The
 0.3.27 candidate reserves three live Bluetooth slots in update mode: both saved
 devices can reconnect while the updater uses the third. Status subscriptions do
 not claim a transfer; the sender that starts or resumes it owns the writes.
+From candidate 0.3.31, update mode suspends notifications, music/weather work,
+alarm delivery, vibration, pairing overlays, and settings saves. Bluetooth
+transfer handling, power checks, watchdog servicing, and Cancel remain active.
+After leaving update mode, normal services resume and overdue timers can ring.
 Versions through 0.3.12 opened InfiniTime recovery after the hold.
 
 An unconfirmed OTA build shows **KEEP / REVERT** instead. The simulator supports
@@ -281,13 +303,16 @@ for the test scope and remaining dedicated hardware checks.
 
 ## Phone features
 
-In the **0.3.18 candidate**, open **Settings → Phone → CONNECT PHONE**, pair once,
-and leave **AUTO CONNECT: ON**. Pairing has one home in Settings; feature screens
-use the connection automatically.
-Time, weather, music metadata, and notifications share one authenticated,
-encrypted connection. Incoming phone writes require the saved bond and a full
+Open **Settings → Bluetooth**, tap **Turn on**, and confirm its battery-use
+explanation. When Bluetooth is enabled,
+the same button becomes **Pair a device** and renews the pairing window without
+interrupting an existing connection. **Paired devices** opens saved-pairing
+information. Pairing has one home in Settings; feature screens use the connection
+automatically. Up to two saved devices can supply time, weather, music metadata,
+and notifications through their authenticated, encrypted connections.
+Incoming phone writes require the saved bond and a full
 16-byte encryption key. The auto-connect preference survives a confirmed reboot;
-new installations and older settings default to Off. **BLUETOOTH OFF** disables
+new installations and older settings default to Off. **Turn off** disables
 automatic reconnection and retains the bond. The phone app controls whether and
 when it reconnects; the watch cannot force a suspended app to run.
 
@@ -298,10 +323,9 @@ Reconnect advertising retains the existing slow 1–1.5-second intervals after i
 initial fast window. The unused motion and heart-rate sensors remain powered
 down; no sensor polling has been added for weather.
 
-**Apps → Weather** shows current conditions and five forecast days received from
-the phone, retaining them after disconnect until reboot. Tap **C/F** to change
-units. Receipt age is displayed, with a warning after 24 hours; it does not claim
-the age of the provider's observation. InfiniLink's newer development branch can
+**Apps → Weather** is temporarily disabled and does not open a screen when tapped.
+The Bluetooth weather receiver and cache remain available; supported companion
+packets still update them. InfiniLink's newer development branch can
 push weather on foreground connection and location/app refresh; classic 1.0.2
 has no weather sender. The newer app's periodic background trigger depends
 on motion notifications that goPine does not send. Unmodified Gadgetbridge's
@@ -312,11 +336,14 @@ controls. Controls require a companion subscription; play/pause also requires
 reported playback state. Tapping track text sends a metadata refresh hint that
 InfiniLink accepts and Gadgetbridge ignores. InfiniLink targets Apple Music and
 requires its music/volume permissions. Android notification forwarding uses the
-ANS inbox. The 0.3.18 candidate receives iPhone notifications through ANCS into
-the same Inbox, including updates and removals. It preserves silent/pre-existing
+ANS inbox, opened through **Apps → Messages**. iPhone notifications arrive through
+ANCS into the same inbox, including updates and removals. It preserves silent/pre-existing
 notification flags and clears Apple session data when disconnecting. Watch-side
 Dismiss affects the local inbox; remote notification actions and system-wide
 iPhone media control are not implemented.
+The inbox's **BUZZ ON / QUIET** control mutes immediately. Re-enabling buzz
+requires confirmation explaining motor use; Quiet still receives messages over
+Bluetooth. No battery-life percentage or duration is promised without measurement.
 See [phone setup, companion limits, and hardware checks](docs/pairing.md).
 
 ## Verification

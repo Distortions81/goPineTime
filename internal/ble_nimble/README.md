@@ -137,6 +137,13 @@ redistributing the linked firmware (copies in this folder). Nordic/ARM headers
 come from TinyGo's bundled MDK/CMSIS, not an unpinned SDK download. This port's
 small compatibility shims do not copy InfiniLink's GPL implementation.
 
+`port/uuid.c` includes the pinned UUID implementation with only its diagnostic
+formatter replaced. Fixed hexadecimal output preserves 16/32/128-bit UUID text
+without retaining libc's general `sprintf` machinery. The native harness compares
+262,144 results and buffer guards against the original function. The firmware
+resource gate rejects both general C formatting and the unused original formatter
+if either survives linking. No wire serialization or UUID comparison is changed.
+
 ## Ownership and shutdown
 
 - NimBLE owns RADIO, TIMER0, RTC0, RNG and the PPI channels configured in its

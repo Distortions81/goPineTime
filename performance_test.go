@@ -66,7 +66,7 @@ func BenchmarkRender(b *testing.B) {
 
 func TestHotUIPathsDoNotAllocate(t *testing.T) {
 	now := time.Unix(0, 0)
-	for _, p := range []page{pageClock, pageStopwatch, pageCountdown, pageUpdate, pageSettings, pageMusic, pagePhone, pageWeather, pageWeatherForecast} {
+	for _, p := range []page{pageClock, pageApps, pageDisplaySettings, pageStopwatch, pageCountdown, pageUpdate, pageSettings, pageMusic, pagePhone, pageWeather, pageWeatherForecast} {
 		u := newWatchUI(firmwareConfirmed)
 		u.page, u.holding, u.holdStep = p, true, 12
 		u.timers.watch.lap = 1250 * time.Millisecond
@@ -79,13 +79,16 @@ func TestHotUIPathsDoNotAllocate(t *testing.T) {
 		if err := r.render(d, draw); err != nil {
 			t.Fatal(err)
 		}
-		if got := testing.AllocsPerRun(20, func() {
-			benchmarkKey = u.frameKey(now, power)
-			if err := r.render(d, draw); err != nil {
-				panic(err)
+		for _, light := range []bool{false, true} {
+			u.lightMode = light
+			if got := testing.AllocsPerRun(20, func() {
+				benchmarkKey = u.frameKey(now, power)
+				if err := r.render(d, draw); err != nil {
+					panic(err)
+				}
+			}); got != 0 {
+				t.Fatalf("page %d (light=%v): %g allocations per frame", p, light, got)
 			}
-		}); got != 0 {
-			t.Fatalf("page %d: %g allocations per frame", p, got)
 		}
 	}
 	for p := pageClock; p <= pageAlert; p++ {
