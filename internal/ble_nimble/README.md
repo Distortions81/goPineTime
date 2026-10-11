@@ -9,7 +9,7 @@ notification receiver, an iOS ANCS client, and a custom direct-update receiver. 
 Nordic Legacy DFU inside goPine remain unimplemented; legacy DFU clients use
 InfiniTime recovery.
 
-Current source targets **0.3.28**. The [pairing harness](../../docs/pairing-harness.md)
+Current source targets **0.3.29**. The [pairing harness](../../docs/pairing-harness.md)
 runs bounded physical checks on hci1 and reports phase-specific failures. The
 retained 0.3.23 watch trace shows repeated authentication failures, including
 successful encryption callbacks without a fully authenticated/bonded connection.
@@ -97,6 +97,11 @@ spectators and normal phone connections are not tuned. Preferred ATT MTU is 247;
 5 KiB C arena holds host startup allocations, with over 2 KiB spare above the
 64-bit sanitizer harness peak of 3,056 bytes. Smaller negotiated MTUs
 use smaller chunks. Byte counts are acknowledged only after flash readback.
+
+Immutable service definitions stay in flash. Phone, standalone weather and OTA
+payloads share mode-specific storage; link metadata and ANCS remain independent.
+Prepared-write metadata is capped at the eight available mbufs, preserving every
+physically possible queued write. See the [memory measurements](../../docs/releases/0.3.29.md).
 
 Only the inactive application slot is written. Image validation streams through
 MCUboot header/vector/SHA-256 checks. No BLE operation activates the image;

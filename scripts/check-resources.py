@@ -52,6 +52,18 @@ def parse_symbols(text):
     return symbols
 
 
+def largest_ram_symbols(text, limit=20):
+    """Rank linked static objects; this excludes allocations inside the Go heap."""
+    objects = []
+    for line in text.splitlines():
+        match = re.fullmatch(r"([0-9a-fA-F]+) ([0-9a-fA-F]+) ([bBdDsS]) (.+)", line.strip())
+        if match:
+            address, size = int(match[1], 16), int(match[2], 16)
+            if 0x20000000 <= address < 0x20010000 and size:
+                objects.append({"name": match[4], "bytes": size})
+    return sorted(objects, key=lambda value: (-value["bytes"], value["name"]))[:limit]
+
+
 def parse_frames(text):
     frames, address = {}, None
     for line in text.splitlines():
@@ -195,6 +207,7 @@ def main():
     c_frames = parse_c_frames(args.ble_stack_usage.read_text()) if args.ble_stack_usage else None
     result = audit(symbols, frames, stack, c_frames)
     result["elf"] = str(args.elf)
+    result["largest_static_ram_symbols"] = largest_ram_symbols(output("llvm-nm", "--print-size"))
     if args.report:
         args.report.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))

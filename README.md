@@ -6,7 +6,7 @@ that uses the same clock and font rendering code as the watch build.
 
 The latest public release is **0.3.16**, which fixes a Linux Bluetooth pairing
 conflict during firmware updates. The browser updater selects the latest release
-automatically. Current source targets **0.3.28**, a candidate that brings time,
+automatically. Current source targets **0.3.29**, a candidate that brings time,
 weather, music, and supported notifications together under **Settings → Phone**,
 with a saved auto-connect preference and automatic time from the paired phone.
 It also includes in-app firmware updates, charger wake screens, and a saved
@@ -80,6 +80,10 @@ pipeline, writes without response where supported, and shorter upload connection
 intervals. Both senders retain compatibility with older protocol-2 receivers and
 report transfer timing. The faster receiver must be installed before its speed
 can be measured on a subsequent transfer.
+
+The [0.3.29 memory candidate](docs/releases/0.3.29.md) recovers 2 KiB of static RAM
+and removes repeated flash-driver allocations while retaining the same phone and
+OTA connection capacities. It has not been flashed.
 
 Use the [browser updater](https://distortions81.github.io/goPineTime/) with goPine
 0.3.22 or newer already installed, or download the application ZIP from

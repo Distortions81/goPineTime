@@ -40,6 +40,10 @@
 #define MYNEWT_VAL_BLE_L2CAP_COC_MAX_NUM 0
 #define MYNEWT_VAL_MSYS_1_BLOCK_COUNT 8
 #define MYNEWT_VAL_MSYS_1_BLOCK_SIZE 128
+// Every prepared-write entry owns at least one msys mbuf. With one eight-block
+// msys pool, the upstream default of64 entries can never be used concurrently.
+// Keep all achievable queued writes without reserving56 unreachable entries.
+#define MYNEWT_VAL_BLE_ATT_SVR_MAX_PREP_ENTRIES MYNEWT_VAL_MSYS_1_BLOCK_COUNT
 #define MYNEWT_VAL_BLE_ACL_BUF_SIZE 64
 #define MYNEWT_VAL_BLE_ACL_BUF_COUNT 4
 

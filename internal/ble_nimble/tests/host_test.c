@@ -696,16 +696,16 @@ static void phone_complete_pairing(bool wrong_code, bool fail_identity) {
     uint8_t early_time[10]={0xea,0x07,10,9,16,7,8,5,0,1};
     write_characteristic(BLE_UUID16_DECLARE(0x1805),BLE_UUID16_DECLARE(0x2a2b),
                          early_time,sizeof(early_time),BLE_ATT_OP_ERROR_RSP);
-    assert(reply[12]==BLE_ATT_ERR_INSUFFICIENT_AUTHEN && !phone_peer_find(1)->time.size);
+    assert(reply[12]==BLE_ATT_ERR_INSUFFICIENT_AUTHEN && !phone_data(phone_peer_find(1))->time.size);
     write_characteristic(&weather_uuid.u,&weather_data_uuid.u,
                          companion_current_v1,sizeof(companion_current_v1),BLE_ATT_OP_ERROR_RSP);
-    assert(reply[12]==BLE_ATT_ERR_INSUFFICIENT_AUTHEN && !phone_peer_find(1)->weather.sizes[0]);
+    assert(reply[12]==BLE_ATT_ERR_INSUFFICIENT_AUTHEN && !phone_data(phone_peer_find(1))->weather.sizes[0]);
     write_characteristic(&music_uuids[0].u,&music_uuids[4].u,
                          companion_track,sizeof(companion_track),BLE_ATT_OP_ERROR_RSP);
-    assert(reply[12]==BLE_ATT_ERR_INSUFFICIENT_AUTHEN && !phone_peer_find(1)->music.track[0]);
+    assert(reply[12]==BLE_ATT_ERR_INSUFFICIENT_AUTHEN && !phone_data(phone_peer_find(1))->music.track[0]);
     write_characteristic(BLE_UUID16_DECLARE(0x1811),BLE_UUID16_DECLARE(0x2a46),
                          companion_alert,sizeof(companion_alert),BLE_ATT_OP_ERROR_RSP);
-    assert(reply[12]==BLE_ATT_ERR_INSUFFICIENT_AUTHEN && !phone_peer_find(1)->notification.count);
+    assert(reply[12]==BLE_ATT_ERR_INSUFFICIENT_AUTHEN && !phone_data(phone_peer_find(1))->notification.count);
     uint8_t pairing[]={BLE_SM_OP_PAIR_REQ,BLE_SM_IO_CAP_KEYBOARD_DISP,0,0x0d,16,3,3};
     receive_l2cap(BLE_L2CAP_CID_SM,pairing,sizeof(pairing));
     assert(reply[8]==BLE_SM_OP_PAIR_RSP);
@@ -782,18 +782,18 @@ static void phone_complete_pairing(bool wrong_code, bool fail_identity) {
     write_characteristic(BLE_UUID16_DECLARE(0x1805),BLE_UUID16_DECLARE(0x2a2b),
                          early_time,sizeof(early_time),BLE_ATT_OP_WRITE_RSP);
     uint8_t deferred[147];uint32_t deferred_age;
-    assert(!gopine_ble_take(deferred,&deferred_age) && phone_peer_find(1)->time.size);
+    assert(!gopine_ble_take(deferred,&deferred_age) && phone_data(phone_peer_find(1))->time.size);
     write_characteristic(&weather_uuid.u,&weather_data_uuid.u,
                          companion_current_v1,sizeof(companion_current_v1),BLE_ATT_OP_WRITE_RSP);
-    assert(!gopine_ble_take_weather(deferred) && phone_peer_find(1)->weather.sizes[0]);
+    assert(!gopine_ble_take_weather(deferred) && phone_data(phone_peer_find(1))->weather.sizes[0]);
     write_characteristic(&music_uuids[0].u,&music_uuids[4].u,
                          companion_track,sizeof(companion_track),BLE_ATT_OP_WRITE_RSP);
     assert(gopine_ble_take_music(deferred) && deferred[81]==PHONE_LINK_SECURING && !deferred[0]);
-    assert(!memcmp(phone_peer_find(1)->music.track,companion_track,sizeof(companion_track)));
+    assert(!memcmp(phone_data(phone_peer_find(1))->music.track,companion_track,sizeof(companion_track)));
     assert(gopine_ble_music_command(0,peer_generation)==BLE_HS_ENOTCONN);
     write_characteristic(BLE_UUID16_DECLARE(0x1811),BLE_UUID16_DECLARE(0x2a46),
                          companion_alert,sizeof(companion_alert),BLE_ATT_OP_WRITE_RSP);
-    assert(!gopine_ble_take_notification(deferred) && phone_peer_find(1)->notification.count);
+    assert(!gopine_ble_take_notification(deferred) && phone_data(phone_peer_find(1))->notification.count);
     gopine_ble_ack_updates();assert(!gopine_ble_updates()); // no pending-data spin
     assert(phone_link_snapshot(1,true)==PHONE_LINK_SECURING);
     assert(!client_request_count); // ANCS waits for completed bonding too.
@@ -801,8 +801,8 @@ static void phone_complete_pairing(bool wrong_code, bool fail_identity) {
         uint8_t failed[]={BLE_SM_OP_PAIR_FAIL,BLE_SM_ERR_UNSPECIFIED};
         receive_l2cap(BLE_L2CAP_CID_SM,failed,sizeof(failed));
         assert(!pairing_code && !gopine_bond_exists() && !phone_link_ready(1));
-        assert(!phone_peer_find(1)->time.size && !phone_peer_find(1)->weather.sizes[0] &&
-               !phone_peer_find(1)->notification.count && !phone_peer_find(1)->music.track[0]);
+        assert(!phone_data(phone_peer_find(1))->time.size && !phone_data(phone_peer_find(1))->weather.sizes[0] &&
+               !phone_data(phone_peer_find(1))->notification.count && !phone_data(phone_peer_find(1))->music.track[0]);
         assert(gopine_ble_pairing_progress()==0x514);
         gopine_ble_stop();test_rtc0.COUNTER+=32768;gopine_ble_poll();gopine_ble_poll();
         assert(!gopine_ble_busy());return;
@@ -928,6 +928,8 @@ static void phone_complete_pairing(bool wrong_code, bool fail_identity) {
 #include "host_trace_transport.h"
 #include "host_device_info.h"
 #include "host_update_tuning.h"
+#include "host_prepare_writes.h"
+#include "host_mode_payload.h"
 int main(int argc,char **argv) {
     setbuf(stdout,NULL);
     if(argc==3 && !strcmp(argv[1],"--service-changed-reboot"))
@@ -940,6 +942,8 @@ int main(int argc,char **argv) {
     phone_device_information();
     ota_connection_tuning();
     ota_pipeline();
+    ota_prepared_writes();
+    mode_payload_lifecycle();
     uint16_t original_battery=0,original_music=0;
     int original_attrs=0,original_services=0,original_configs=0;
     for(unsigned i=0;i<100;i++) {
