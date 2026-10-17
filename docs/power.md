@@ -5,6 +5,61 @@ and side-button recovery continue working. These changes have host-test and
 firmware-build coverage; battery life and sleep current still need measurement
 on a watch.
 
+## Bluetooth-off investigation (2026-10-16)
+
+The user reported 91% remaining after 17 hours asleep with Bluetooth turned
+off, compared with a remembered runtime near 40 days. If the starting reading
+was 100%, linear extrapolation gives 7.9 days. The voltage gauge and unknown
+installed version prevent treating that as a measured full-discharge runtime.
+
+The shutdown audit found a reproducible omission in the pinned nRF52 driver
+integration. `ble_phy_disable()` stops RADIO, TIMER0 and the event-triggering
+PPI routes, but retains encryption state for the next connection event.
+`ble_ll_reset()` ultimately calls `ble_phy_init()`, which also leaves the shared
+CCM/AAR `ENABLE` register untouched. After encrypted traffic it can retain
+CCM's enabled value (2); after private-address resolution it can retain AAR's
+enabled value (3). Clearing the resolving list does not disable that peripheral.
+
+The local fix uses `port/power.h` at final shutdown and startup-failure exits.
+After stopping the PHY, it calls `ble_phy_encrypt_disable()` before stopping
+RNG and releasing HFXO. This stops CCM, clears its software encryption flag,
+and writes zero to the shared CCM/AAR `ENABLE` register. On nRF52832 both
+peripherals share the `STOP` and `ENABLE` addresses; Nordic documents their
+[shared resources and enable register](https://docs.nordicsemi.com/r/bundle/ps_nrf52832/page/ccm.html).
+The next connection can enable encryption normally. This does not disable
+encryption between active connection events or change pairing requirements.
+
+Other audited paths already stop the controller scheduler and RF-manager
+timer, cancel connection and privacy timers, shut down TIMER0, stop RNG, and
+release the high-frequency crystal. RTC0 remains running for NimBLE timekeeping
+and its overflow handling. After shutdown, the bridge ignores inactive software
+callouts and stops pumping the host/controller. This audit found no evidence of
+ordinary advertising continuing with Bluetooth off.
+
+Validation adds `scripts/test-ble-phy.py`, which executes the pinned PHY's actual
+initialization, disable and encryption routines against mapped memory using
+Nordic's real register layouts. Unrelated ARM packet-copy assembly, NVIC/ISR
+installation and RNG stop are stubbed for this focused host test. The old sequence reproduces
+the retained CCM/AAR enable values; the new sequence clears them through repeated
+restart cycles. Existing host tests had empty PHY shutdown stubs and could not
+detect this. The integration harness now checks the cleanup ordering and an
+hour of simulated idle time after shutdown, including after encrypted phone
+traffic and consumption of the one-time notification-clear records. These tests
+do not emulate DMA, electrical behavior or interrupt timing. The PHY and host
+integration tests pass ASan/UBSan; `go test ./...`, `go vet ./...`, the BLE
+archive build and TinyGo firmware link/resource gate pass. The audit ELF and
+resource report are `build/ble/shutdown-check.elf` and
+`build/ble/shutdown-resources.json`; this is not a release package or an upload.
+
+**This proves incomplete peripheral cleanup, not the cause or magnitude of the
+reported drain.** No sleep-current measurement or on-watch validation of this
+fix has occurred. Version 0.3.34 was subsequently uploaded in-app on 2026-10-16;
+the watch verified the image, and the user confirmed installation, boot and
+KEEP on 2026-10-16. They plan to leave Bluetooth off and check the battery on
+2026-10-17; battery impact remains unmeasured.
+See [the transfer record](releases/0.3.34.md). Compare Bluetooth-never-started sleep with sleep after an
+encrypted connection and Turn off, using the same firmware and settings.
+
 ## Current display controls
 
 Candidate 0.3.33 displays a compact percentage and battery/charging icon at the

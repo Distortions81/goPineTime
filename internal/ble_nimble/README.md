@@ -168,6 +168,11 @@ if either survives linking. No wire serialization or UUID comparison is changed.
   for subsequent starts. Off never reconnects. Enabled phone mode advertises at 20–30 ms intervals
   for the bounded 30-second setup window, then 1–1.5 seconds. Failed connections
   retain the remaining fast window; opening/waking Phone renews it.
+- Full shutdown also calls `ble_phy_encrypt_disable()`: the upstream PHY stop
+  and reset/init routines retain CCM/AAR enable state. On nRF52832 the two
+  peripherals share STOP/ENABLE registers, so this clears both and resets the
+  PHY encryption flag. Startup failures use the same cleanup. This closes a
+  reproduced register-state omission; its current impact is not yet measured.
 - Pending settings saves temporarily stop the shared phone session. Internal
   flash programming waits until both the controller and its asynchronous
   disconnect are idle; auto-connect resumes after the save. Opt-in is saved before
@@ -201,6 +206,15 @@ if either survives linking. No wire serialization or UUID comparison is changed.
   This defect reproduced on the second host start in the integration test.
 
 ## Verification and limits
+
+Run `python3 scripts/test-ble-phy.py --infinitime build/deps/InfiniTime
+--tinygo-root /path/to/tinygo` on Linux to exercise the pinned nRF52 PHY with
+the toolchain's Nordic register definitions. The test reproduces the old retained
+CCM/AAR enable state, checks full shutdown and restart, and runs under ASan/UBSan.
+It maps register memory and stubs NVIC/ISR installation and RNG stop; two unrelated ARM
+packet-copy assembly blocks become assertions. It does not simulate radio/DMA
+side effects or measure current. Host integration additionally checks shutdown
+cleanup and that simulated idle time produces no BLE work or HCI commands.
 
 Host Go tests cover saved opt-in, shared navigation, authenticated phone-time
 handling, repeated sessions, cancellation, sleep, expiry, bad payloads, delayed

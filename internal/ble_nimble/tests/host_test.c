@@ -37,6 +37,11 @@ static unsigned flash_writes;
 static bool reject_peer_irk;
 static bool reject_peer_irk_remove;
 static unsigned parameter_requests;
+// Seed retained PHY state at init/reset so every shutdown exercises cleanup;
+// real init/reset preserve it rather than enabling it unconditionally.
+// Every final crystal release must follow explicit CCM/AAR shutdown.
+static bool crypto_peripheral_enabled;
+static void assert_stopped_idle(void);
 static uint16_t parameter_handle,parameter_values[4];
 static bool accept_parameter_request,hold_parameter_response;
 // Capture real outgoing client requests separately from the watch's server
@@ -81,15 +86,16 @@ void nimble_port_init(void) {
     os_msys_init(); ble_hs_init(); ble_hci_ram_init();
 }
 struct ble_npl_eventq *nimble_port_get_dflt_eventq(void) { return &test_hostq; }
-int ble_phy_init(void) { return 0; }
+int ble_phy_init(void) { crypto_peripheral_enabled=true;return 0; }
 int ble_phy_txpwr_set(int dbm) { (void)dbm; return 0; }
 void ble_phy_disable(void) {}
-void ble_phy_rfclk_disable(void) {}
+void ble_phy_encrypt_disable(void) {crypto_peripheral_enabled=false;}
+void ble_phy_rfclk_disable(void) {assert(!crypto_peripheral_enabled);}
 int ble_hw_rng_stop(void) { return 0; }
 int ble_hw_get_static_addr(ble_addr_t *addr) {
     addr->type=BLE_ADDR_RANDOM;memset(addr->val,0xc0,sizeof(addr->val));return 0;
 }
-int ble_ll_reset(void) { controller_resolving=false;resolving_count=0;return 0; }
+int ble_ll_reset(void) { crypto_peripheral_enabled=true;controller_resolving=false;resolving_count=0;return 0; }
 int ble_ll_rand_data_get(uint8_t *buf,uint8_t len) { memset(buf,42,len); return 0; }
 uint32_t bond_flash_word(unsigned offset) {
     assert(offset<BOND_PAGE_SIZE && offset%4==0);return flash[offset/4];
@@ -863,6 +869,7 @@ static void phone_complete_pairing(bool wrong_code, bool fail_identity) {
     // Feature writes retain a 200 ms final-ACK grace before radio teardown.
     test_rtc0.COUNTER+=32768;gopine_ble_poll();gopine_ble_poll();
     assert(!gopine_ble_busy() && gopine_bond_status()==2);
+    assert_stopped_idle();
     // Reload the actual flash journal, then restore encryption with the saved
     // key. A reconnect must not ask for another code or merely read old RAM.
     gopine_bond_init();assert(gopine_bond_status()==2);
@@ -956,6 +963,25 @@ static void uuid_formatting(void) {
     puts("UUID formatting: 262144 upstream comparisons and buffer guards passed");
 }
 
+static void assert_stopped_idle(void) {
+    assert(!gopine_ble_busy() && !crypto_peripheral_enabled);
+    // The normal Go loop consumes the two possible ANCS session-clear records
+    // even with Bluetooth off. These are one-time UI work, not leaked radio work.
+    uint8_t out[ANCS_PACKET_SIZE];
+    for(unsigned i=0;i<3;i++)gopine_ble_take_apple_notification(out);
+    gopine_ble_ack_updates();
+    unsigned before=commands;
+    // Simulate the hardware input loop's controller-only pump during an hour
+    // asleep. Stale software callouts must not wake Go or restart the radio.
+    for(unsigned minute=0;minute<60;minute++) {
+        test_rtc0.COUNTER+=60*32768;
+        gopine_ble_controller_poll();
+        assert(!gopine_ble_updates() && gopine_ble_idle_ms()==240000);
+        assert(!gopine_ble_busy() && !crypto_peripheral_enabled);
+        assert(commands==before);
+    }
+}
+
 int main(int argc,char **argv) {
     setbuf(stdout,NULL);
     if(argc==3 && !strcmp(argv[1],"--service-changed-reboot"))
@@ -991,6 +1017,7 @@ int main(int argc,char **argv) {
         if(i==0)update_notifications();
         gopine_ble_stop();gopine_ble_poll();
         assert(!gopine_ble_busy() && connection==BLE_HS_CONN_HANDLE_NONE);
+        assert_stopped_idle();
         if(i%10==0)phone_pairing_code(i==90);
     }
     phone_retry_advertising();

@@ -4,114 +4,33 @@ goPine is a digital clock with alarms, stopwatch, and countdown for the PineTime
 with [TinyGo](https://tinygo.org/). It also includes an SDL2 desktop simulator
 that uses the same clock and font rendering code as the watch build.
 
-The latest public release is **0.3.16**, which fixes a Linux Bluetooth pairing
-conflict during firmware updates. The browser updater selects the latest release
-automatically. Current source targets **0.3.29**, a candidate that brings time,
-weather, music, and supported notifications together under **Settings → Bluetooth**,
-with a saved auto-connect preference and automatic time from the paired phone.
-It also includes in-app firmware updates, charger wake screens, and a saved
-flipped-screen option. Phone connections are opt-in. The candidate adds an ANCS
-client for iPhone notifications; the user has confirmed notification delivery,
-while completion of the InfiniLink connection remains unverified.
-The current interface groups tools and messages under **Apps**, temporarily
-disables its Weather button, and offers light/dark themes plus three brightness
-levels under **Settings → Display**.
-The [0.3.19 follow-up](docs/releases/0.3.19.md) keeps phone setup awake for two
-minutes and defers settings-save disconnects while pairing is in progress.
-The [0.3.20 follow-up](docs/releases/0.3.20.md) fixes a missed wake signal for
-queued Bluetooth host events and renews setup visibility after waking Phone.
-It also services controller work during pairing's key calculation, following
-InfiniTime's controller-priority behavior. Phone → INFO retains pairing errors.
-It restores the controller's saved phone identity keys after reset, following
-InfiniTime's bond restore, so private-address changes preserve the pairing.
-It also enables the GATT client operations required for ANCS; disabling the BLE
-central radio role had inadvertently disabled those operations as well.
-The full simulated Secure Connections exchange and saved-bond reconnect now
-pass; these checks do not establish a working physical InfiniLink connection.
-The watch received and verified 0.3.20 through the in-app updater on 2026-10-10;
-INSTALL and boot/KEEP have not been reported. The user subsequently reported
-entering the pairing code without completion; INFO showed **No saved phone**.
-Physical pairing remains unresolved. The [0.3.21 follow-up](docs/releases/0.3.21.md)
-accepts authenticated feature writes while the final identity exchange is
-pending, preventing a redundant ATT authentication error. Their data stays
-queued until bonding completes and is cleared if security fails. It also
-shows the pairing stage and completed code-check rounds on the PIN screen,
-and retains the last stage in INFO after failure. The watch received and verified
-0.3.21 through the in-app updater on 2026-10-10; INSTALL and boot/KEEP have not
-been reported.
+The latest public release is **0.3.34**. It fixes incomplete Bluetooth shutdown:
+the encryption/address-resolution peripheral is now explicitly disabled when
+Bluetooth is turned off. The local 0.3.34 build was installed and confirmed with
+KEEP on 2026-10-16. Its effect on battery runtime still needs measurement.
 
-The [0.3.23 follow-up](docs/releases/0.3.23.md) corrects slow advertising
-on the first failed phone connection and renews the fast window from CONNECT
-PHONE without interrupting pairing. First pairing now follows the reference
-central-triggered flow. A non-secret retained Bluetooth trace and a physical
-pairing probe support diagnosis. The watch received and verified 0.3.23 through
-the in-app updater on 2026-10-10. Physical probes could not discover the watch in
-Phone mode; physical InfiniLink bonding remains unresolved.
+This release includes the intervening candidates' saved Bluetooth preference,
+time/weather/music integration, support for two paired devices, Apple
+notifications, faster protocol-2 firmware transfers, and memory reductions.
+The interface groups tools and messages under **Apps**, with a persistent battery
+indicator, light/dark themes, three brightness levels, touch wake and rotation
+under **Settings → Display**. The Weather app button is currently disabled.
+Phone connections are opt-in. Notification delivery has been confirmed on the
+watch; full physical InfiniLink completion and reconnect reliability still need
+validation.
 
-The [0.3.24 candidate](docs/releases/0.3.24.md) adds an
-[automated pairing harness](docs/pairing-harness.md), prevents unusable bonds from
-occupying the phone slot, services Bluetooth during hardware settling delays,
-and repairs ANCS retry wakeups. A retained physical trace shows authentication
-failures; full physical InfiniLink pairing remains unverified. The watch received
-and verified 0.3.24 through the in-app updater on 2026-10-10; INSTALL, boot and
-KEEP have not been reported.
+Use the [browser updater](https://distortions81.github.io/goPineTime/) with a BLE
+build of goPine **0.3.22 or newer** already installed, or download the application
+ZIP from [GitHub Releases](https://github.com/Distortions81/goPineTime/releases/latest).
+Older firmware needs a one-time transition using its original in-app sender,
+or a wired installation. Native protocol-2 packages cannot be installed through
+InfiniTime recovery.
 
-The [0.3.25 candidate](docs/releases/0.3.25.md) fixes a reproduced failure to
-advertise after restarting Bluetooth with a saved phone: duplicate controller
-identity entries were rejected by hardware but incorrectly accepted by the
-test harness. It also fixes the bond-save wakeup and adds early-failure traces.
-The watch received and verified 0.3.25 through the in-app updater on 2026-10-10;
-INSTALL, boot and KEEP have not been reported. Physical InfiniLink completion
-remains unverified.
-
-The [0.3.26 candidate](docs/releases/0.3.26.md) restores InfiniTime's immediate
-Battery read, which InfiniLink's development branch uses to finish its connection screen. The user
-has confirmed notification delivery following 0.3.25; InfiniLink itself still
-shows Connecting. A regression now follows the app's single initial read and
-fails with goPine's previous Battery encryption gate. The watch received and
-verified 0.3.26 through the in-app updater on 2026-10-10 with its saved phone
-pairing retained. INSTALL, boot and KEEP have not been reported.
-
-The user's **Home, Charts, Settings** interface instead matches classic
-InfiniLink 1.0.2, which waits for a nonempty firmware revision. The
-[0.3.27 candidate](docs/releases/0.3.27.md) adds the missing Device Information
-service with the actual goPine version. Physical InfiniLink completion remains
-unverified; working Bluetooth alone does not establish that app condition.
-
-The [0.3.28 candidate](docs/releases/0.3.28.md) adds a negotiated two-packet OTA
-pipeline, writes without response where supported, and shorter upload connection
-intervals. Both senders retain compatibility with older protocol-2 receivers and
-report transfer timing. The faster receiver must be installed before its speed
-can be measured on a subsequent transfer.
-
-The [0.3.29 memory candidate](docs/releases/0.3.29.md) recovers 2 KiB of static RAM
-and removes repeated flash-driver allocations while retaining the same phone and
-OTA connection capacities. It has not been flashed.
-
-The [0.3.33 candidate](docs/releases/0.3.33.md) includes a compact battery indicator
-at the top right on every screen, the Display/Bluetooth UI
-cleanup, battery-use confirmations, recycled notification/OTA storage, exclusive
-update mode, and a measured dependency reduction. It was uploaded through the
-in-app updater on 2026-10-11; the watch verified all 296,036 bytes in a transfer
-lasting 177.9 seconds. INSTALL, boot, and KEEP have not been user-confirmed.
-
-Use the [browser updater](https://distortions81.github.io/goPineTime/) with goPine
-0.3.22 or newer already installed, or download the application ZIP from
-[GitHub Releases](https://github.com/Distortions81/goPineTime/releases/latest).
-See the [0.3.16 release notes](docs/releases/0.3.16.md),
-[0.3.17 candidate notes](docs/releases/0.3.17.md), and [roadmap](docs/roadmap.md)
-for changes and validation limits. **0.3.19 booted successfully and was confirmed
-with KEEP on 2026-10-10. The preceding 0.3.17 crashed before showing a pairing
-code on one attempt and did not complete after code entry on another.** The candidate's phone
-compatibility, reconnect behavior, and battery consumption require hardware tests.
-On 0.3.18, the user reported a setup screen that slept quickly and a pairing
-code/iPhone prompt that disappeared before entry. Clearing saved pairing keys
-allowed a fresh code but did not establish a successful connection.
-On 0.3.19, setup still slept quickly after waking it, and the pairing code and
-iPhone prompt still disappeared. Phone pairing remains a hardware failure.
-The [0.3.18 candidate](docs/releases/0.3.18.md) adds Apple notifications, makes
-Settings → Phone the sole pairing entry, reduces Bluetooth callback nesting,
-and fixes a reproduced GATT service-memory defect when Bluetooth restarts.
+See the [0.3.34 release notes](docs/releases/0.3.34.md),
+[power investigation](docs/power.md#bluetooth-off-investigation-2026-10-16),
+[update instructions](docs/ota.md), and [roadmap](docs/roadmap.md) for validation
+limits and setup details. Earlier candidate histories remain in
+[release notes](docs/releases/).
 
 ## Desktop simulator
 

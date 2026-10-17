@@ -61,6 +61,7 @@ jobs:
           node --test web/*.test.mjs
           python3 scripts/test-ble-port.py --infinitime build/deps/InfiniTime
           python3 scripts/test-ble-host.py --infinitime build/deps/InfiniTime
+          python3 scripts/test-ble-phy.py --infinitime build/deps/InfiniTime --tinygo-root "$(tinygo env TINYGOROOT)"
       - name: Initialize TinyGo libc headers
         run: tinygo build -target=./targets/pinetime-gopine.json -o build/toolchain-check.elf .
       - name: Build BLE OTA firmware and enforce memory budgets

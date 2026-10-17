@@ -12,7 +12,9 @@ Emergency bootloader recovery and rollback remain available. Recovery uses
 external compatible DFU tools and official InfiniTime packages, not native
 protocol-2 goPine packages. Do not enter recovery for a normal update.
 
-The configured watch uses the TP-Link USB adapter **hci1**. goPine's address
+The configured watch uses the TP-Link USB adapter **hci0** (USB `2357:0604`,
+controller `3C:78:95:44:D8:FD`, verified 2026-10-16; formerly **hci1** before
+Linux renumbered it). goPine's address
 is **C9:9E:15:7A:69:B4**; recovery uses **C9:9E:15:7A:69:B5**. Do not enable
 the antenna-less MediaTek adapter. Start the already prepared, validated package
 with the appropriate mode:
@@ -20,7 +22,7 @@ with the appropriate mode:
 ```sh
 build/ota/venv/bin/python -u scripts/ota_update.py VERSION \
   --package build/ota/gopine-update-VERSION.zip \
-  --adapter hci1 --address C9:9E:15:7A:69:B4 --ready
+  --adapter hci0 --address C9:9E:15:7A:69:B4 --ready
 ```
 
 For the first transition from 0.3.21 to the current 0.3.23 candidate, the old in-app sender is prepared

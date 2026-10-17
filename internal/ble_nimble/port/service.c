@@ -14,6 +14,7 @@
 #include "controller/ble_ll.h"
 #include "controller/ble_ll_hci.h"
 #include "controller/ble_hw.h"
+#include "power.h"
 #include "weather_mailbox.h"
 #include "music_mailbox.h"
 #include "notification_mailbox.h"
@@ -227,9 +228,7 @@ static void finish_stop(void) {
     // A timed-out peer may still have host-side connection records. Clear
     // them through the same GAP cleanup used after a controller reset.
     ble_gap_reset_state(BLE_HS_ECONTROLLER);
-    ble_phy_disable();
-    ble_hw_rng_stop();
-    ble_phy_rfclk_disable();
+    gopine_ble_power_down();
     connection = BLE_HS_CONN_HANDLE_NONE;
     synced = host_up = stopping = false;
     lifecycle_changed = true;
@@ -792,9 +791,9 @@ static int start_window(const uint8_t *value, uint8_t battery, uint32_t window_m
         ble_svc_gap_init();
         ble_svc_gatt_init();
         int rc = ble_gatts_count_cfg(services);
-        if (rc) { ble_phy_disable(); ble_hw_rng_stop(); ble_phy_rfclk_disable(); init_failure = rc; return rc; }
+        if (rc) { gopine_ble_power_down(); init_failure = rc; return rc; }
         rc = ble_gatts_add_svcs(services);
-        if (rc) { ble_phy_disable(); ble_hw_rng_stop(); ble_phy_rfclk_disable(); init_failure = rc; return rc; }
+        if (rc) { gopine_ble_power_down(); init_failure = rc; return rc; }
         ble_svc_gap_device_name_set("InfiniTime");
         ble_svc_gap_device_appearance_set(0x00c2); // Sports watch.
         ble_hs_cfg.sync_cb = on_sync;
@@ -808,7 +807,7 @@ static int start_window(const uint8_t *value, uint8_t battery, uint32_t window_m
         initialized = true;
     }
     if(!gopine_bond_prepare(battery)) {
-        ble_phy_disable();ble_hw_rng_stop();ble_phy_rfclk_disable();
+        gopine_ble_power_down();
         return BLE_HS_ESTORE_CAP;
     }
     // The controller RF manager owns HFXO start/stop around scheduled events.
