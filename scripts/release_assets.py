@@ -47,67 +47,49 @@ def stage(tag, commit, repository, source, output):
                 tinygo='0.42.0', infinitime_commit=PIN, variant='ble', ota_protocol=2,
                 image_bytes=len(image), package=package.name, sha256=digest)
     (output / 'build-info.json').write_text(json.dumps(info, indent=2) + '\n')
-    docs = f'https://github.com/{repository}/blob/{commit}/docs/ota.md'
+    docs = f'https://github.com/{repository}/blob/{commit}/README.md'
     owner, name = repository.split('/')
     browser_updater = f'https://{owner.lower()}.github.io/{name}/'
-    changes_path = pathlib.Path(__file__).resolve().parents[1] / 'docs/releases' / f'{version}.md'
-    changes = changes_path.read_text().strip() + '\n\n' if changes_path.exists() else ''
     notes = f'''# goPine {version}
 
-{changes}Install with the [goPine Bluetooth updater]({browser_updater}), or download
-**{package.name}** for an application-only PineTime OTA update.
-The bootloader and stored InfiniTime recovery image are not replaced.
+Download **{package.name}** or use the [browser updater]({browser_updater}).
+This application-only update leaves the bootloader and stored recovery intact.
 
 ## Update from goPine 0.3.22 or later
 
-The browser updater works with **BLE builds of goPine 0.3.22 or later** already
-installed on the watch. Use a browser with Web Bluetooth, such as Chrome or Edge
-on a supported computer, or Chrome on Android. Safari and Firefox do not support
-this connection. Linux may need additional browser configuration.
+Requires **BLE builds of goPine 0.3.22 or later** already installed and a browser
+with Web Bluetooth. For first installation, [build and flash over SWD]({docs}#build-and-first-install).
 
-1. Charge to at least **20%** or leave the watch on its charger. Tap **KEEP** if
-   the current firmware is still a trial. Disconnect phone apps and keep the
-   watch close to the computer or phone running the updater.
-2. Open the [browser updater]({browser_updater}). Choose **Use latest release**
-   if it shows **{version}**, or **Choose a ZIP file** with **{package.name}**.
-   The browser validates the package before sending it.
-3. On goPine, open **Settings → Firmware Update** and hold to connect. Leave the
-   watch on **Ready to connect**, then click **Connect & update** in the browser
-   and choose **goPine Update**.
-4. Keep the tab open and the computer or phone awake until the watch verifies
-   the complete image. If Bluetooth disconnects, keep the same page open so it
-   can resume from the watch's acknowledged offset.
-5. Tap **INSTALL** on the watch, then **KEEP** after goPine boots successfully.
-   A reset before KEEP returns to the available fallback.
+1. Use at least 20% battery or external power. Open the browser updater and
+   select the release ZIP; wait for package validation.
+2. On the watch, open **Settings → Firmware Update** and hold until
+   **Ready to connect**. Click **Connect & update** and choose **goPine Update**.
+3. Keep the page open through transfer and verification. Disconnects can resume
+   in the same session.
+4. Tap **INSTALL**, then **KEEP** after reboot. Resetting before KEEP requests rollback.
 
-Download the ZIP and SHA256SUMS. On Linux, verify it with
-`sha256sum --check --ignore-missing SHA256SUMS`.
-For local browser controls, run:
+For Linux/BlueZ:
 
 ```sh
-bash scripts/ota-update.sh {version} --package /path/to/{package.name} --web
+bash scripts/ota-update.sh {version} --package /path/to/{package.name} \\
+  --adapter YOUR_ADAPTER --address YOUR_GOPINE_MAC --web
 ```
 
-On first use, specify `--adapter hci1 --address YOUR_GOPINE_MAC`.
-Native packages require OTA protocol 2. Older firmware needs a one-time
-transition using its original in-app sender, or a wired installation.
-Emergency InfiniTime recovery remains in the bootloader; this repository no
-longer supplies a recovery DFU sender or Nordic DFU packages.
+Verify downloads with `sha256sum --check --ignore-missing SHA256SUMS`.
+Native ZIPs cannot be installed through InfiniTime recovery. Images are unsigned;
+checksums detect corruption, not publisher authenticity. Set or sync local time
+after installation.
 
-The watch must already have a compatible MCUboot/InfiniTime recovery setup.
-Read the [setup, recovery behavior and update instructions]({docs}) before
-installing. This is prototype firmware. Automated build/package/memory checks
-do not establish hardware stability or battery life for a release build.
-The initial clock fallback uses the source commit's UTC date/time; set or sync
-local time after installation if necessary.
+Source: `{commit}`. Built with TinyGo 0.42.0. See `build-info.json` and
+`{report.name}` for provenance and resource checks.
 
-Source: `{commit}`. Built with TinyGo 0.42.0 and the pinned InfiniTime BLE port.
-See build-info.json for provenance and {report.name} for memory-budget results.
+## Recovery reference
+
+Hold the side button until restart. Release at **Green** for normal boot,
+**Blue** for the image remaining in the secondary slot, or **Red** for InfiniTime
+recovery. Rollback cannot restore an overwritten image. See [recovery and SWD
+reinstall]({docs}#recovery).
 '''
-    # Keep the recovery reference last in both release notes and INSTALL.md.
-    ota_docs = pathlib.Path(__file__).resolve().parents[1] / 'docs/ota.md'
-    recovery = ota_docs.read_text().split('<!-- recovery-reference -->\n', 1)[1]
-    notes += '\n' + recovery
     (output / 'INSTALL.md').write_text(notes)
     sums = [f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n'
             for p in sorted(output.iterdir())]
