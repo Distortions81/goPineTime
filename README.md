@@ -34,6 +34,19 @@ Phone features depend on your companion app and its permissions. See the
 The Weather app is currently disabled. Battery percentage is a voltage-based
 estimate; battery runtime is still being evaluated.
 
+## First-time installation
+
+**Stock PineTime running InfiniTime?** There is currently no supported wireless
+first-install path to goPine. The browser updater requires goPine 0.3.22 or newer
+already installed; release ZIPs cannot be installed using InfiniTime's updater
+or recovery mode.
+
+Initial installation currently requires developer setup with physical SWD
+programming access. The [wired setup guide](docs/ota.md#one-time-wired-setup-standalone-gopine-to-mcuboot)
+covers migration from standalone goPine; it is not a stock-watch installation
+walkthrough. If you have a sealed stock watch, keep InfiniTime until a supported
+first-install method is available.
+
 ## Using the watch
 
 Swipe **right** from the clock to open **Apps**, or **left** to open **Settings**.
