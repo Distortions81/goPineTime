@@ -52,43 +52,15 @@ def stage(tag, commit, repository, source, output):
     browser_updater = f'https://{owner.lower()}.github.io/{name}/'
     notes = f'''# goPine {version}
 
-Download **{package.name}** or use the [browser updater]({browser_updater}).
-This application-only update leaves the bootloader and stored recovery intact.
+Update with the [browser updater]({browser_updater}) or download
+`{package.name}`. Requires goPine 0.3.22+ with Bluetooth support.
+Open **Settings → Firmware Update**, transfer, then tap **INSTALL** and **KEEP**.
 
-## Update from goPine 0.3.22 or later
+[Build and first install]({docs}#build-and-first-install) ·
+[Update instructions]({docs}#bluetooth-updates) ·
+[Recovery]({docs}#recovery)
 
-Requires **BLE builds of goPine 0.3.22 or later** already installed and a browser
-with Web Bluetooth. For first installation, [build and flash over SWD]({docs}#build-and-first-install).
-
-1. Use at least 20% battery or external power. Open the browser updater and
-   select the release ZIP; wait for package validation.
-2. On the watch, open **Settings → Firmware Update** and hold until
-   **Ready to connect**. Click **Connect & update** and choose **goPine Update**.
-3. Keep the page open through transfer and verification. Disconnects can resume
-   in the same session.
-4. Tap **INSTALL**, then **KEEP** after reboot. Resetting before KEEP requests rollback.
-
-For Linux/BlueZ:
-
-```sh
-bash scripts/ota-update.sh {version} --package /path/to/{package.name} \\
-  --adapter YOUR_ADAPTER --address YOUR_GOPINE_MAC --web
-```
-
-Verify downloads with `sha256sum --check --ignore-missing SHA256SUMS`.
-Native ZIPs cannot be installed through InfiniTime recovery. Images are unsigned;
-checksums detect corruption, not publisher authenticity. Set or sync local time
-after installation.
-
-Source: `{commit}`. Built with TinyGo 0.42.0. See `build-info.json` and
-`{report.name}` for provenance and resource checks.
-
-## Recovery reference
-
-Hold the side button until restart. Release at **Green** for normal boot,
-**Blue** for the image remaining in the secondary slot, or **Red** for InfiniTime
-recovery. Rollback cannot restore an overwritten image. See [recovery and SWD
-reinstall]({docs}#recovery).
+Checksums: `SHA256SUMS`. Build details: `build-info.json`.
 '''
     (output / 'INSTALL.md').write_text(notes)
     sums = [f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n'

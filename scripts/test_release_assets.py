@@ -56,18 +56,17 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(info['version'], '0.3.15')
         self.assertEqual(info['sha256'], hashlib.sha256((self.output / info['package']).read_bytes()).hexdigest())
 
-    def test_install_notes_prioritize_browser_and_retain_recovery(self):
+    def test_install_notes_are_brief_and_link_to_setup(self):
         self.stage()
         notes = (self.output / 'INSTALL.md').read_text()
         self.assertIn('https://owner.github.io/repo/', notes)
-        self.assertIn('**BLE builds of goPine 0.3.22 or later**', notes)
-        self.assertIn('**Connect & update**', notes)
+        self.assertIn('goPine 0.3.22+', notes)
         self.assertIn('**INSTALL**', notes)
         self.assertIn('**KEEP**', notes)
-        self.assertLess(notes.index('## Update from goPine'), notes.index('## Recovery reference'))
-        for color in ['Green', 'Blue', 'Red']:
-            self.assertIn(f'**{color}', notes)
-        self.assertNotIn('Bluetooth stays off outside Sync Time', notes)
+        readme = 'https://github.com/owner/repo/blob/' + 'a'*40 + '/README.md'
+        for anchor in ['build-and-first-install', 'bluetooth-updates', 'recovery']:
+            self.assertIn(readme + '#' + anchor, notes)
+        self.assertLess(len(notes.split()), 100)
 
     def test_failed_resource_gate_never_stages_assets(self):
         for report in [{'errors': ['stack exceeds budget']}, {}]:
