@@ -8,6 +8,15 @@ alarms, timers, and optional Bluetooth phone features.
 [Download firmware](https://github.com/Distortions81/goPineTime/releases/latest) ·
 [Release notes](docs/releases/)
 
+<p>
+  <img src="docs/images/clock.png" alt="Dark watch face" width="180">
+  <img src="docs/images/clock-light.png" alt="Light watch face" width="180">
+  <img src="docs/images/apps.png" alt="Apps menu" width="180">
+  <img src="docs/images/stopwatch.png" alt="Stopwatch with lap time" width="180">
+</p>
+
+*Screenshots from the desktop simulator.*
+
 ## Features
 
 - 12/24-hour clock with manual date and time settings.
