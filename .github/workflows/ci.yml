@@ -85,6 +85,8 @@ jobs:
         run: python3 scripts/test-ble-host.py --infinitime build/deps/InfiniTime
       - name: Test nRF52 Bluetooth peripheral shutdown
         run: python3 scripts/test-ble-phy.py --infinitime build/deps/InfiniTime --tinygo-root "$(tinygo env TINYGOROOT)"
+      - name: Test TinyGo boot RNG shutdown and restart
+        run: python3 scripts/test-runtime-rng.py --tinygo-root "$(tinygo env TINYGOROOT)"
       - name: Build experimental Bluetooth time-sync candidate
         env:
           FIRMWARE_TIME: "00:00:00"

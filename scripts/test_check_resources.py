@@ -9,6 +9,23 @@ spec.loader.exec_module(resources)
 
 
 class ResourceChecks(unittest.TestCase):
+    def test_runtime_rng_ownership_tracks_real_callers(self):
+        startup = '''00024bc8 <Reset_Handler>:
+   24bfa: f7ff fa9d    bl 0x24138 <machine.GetRNG>
+   24bfe: f7ff fa9b    bl 0x24138 <machine.GetRNG>
+00024138 <machine.GetRNG>:
+   24160: bd10         popeq {r4, pc}
+'''
+        self.assertEqual(resources.runtime_rng_calls(startup), ["Reset_Handler", "Reset_Handler"])
+        later = '''00030000 <main.newRandomConsumer>:
+   30010: f7ff fa9d    bl 0x24138 <machine.GetRNG>
+00031000 <runtime.rand>:
+   31010: f7ff fa9d    b.w 0x24138 <runtime.hardwareRand>
+'''
+        self.assertEqual(resources.runtime_rng_calls(startup + later),
+                         ["Reset_Handler", "Reset_Handler", "main.newRandomConsumer", "runtime.rand"])
+        self.assertEqual(resources.runtime_rng_calls(""), [])
+
     def test_linked_dependencies_deduplicate_aliases_and_separate_ram(self):
         result = resources.linked_dependencies("\n".join([
             "00010000 00000020 T sprintf", "00010000 00000020 T vfprintf",

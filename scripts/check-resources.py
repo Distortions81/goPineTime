@@ -74,6 +74,24 @@ def recycling_allocations(text):
             and re.search(r"internal/(?:ota/(?:receiver|image)|notifications/notifications)\.go:", line)]
 
 
+def runtime_rng_calls(text):
+    """Keep TinyGo's polling RNG separate from NimBLE's interrupt-driven RNG.
+
+    The pinned firmware only uses Go's hardware RNG twice in Reset_Handler.
+    A new runtime/application consumer needs explicit shared ownership; it
+    cannot safely poll VALRDY while NimBLE's ISR consumes the same event.
+    """
+    caller = None
+    calls = []
+    for line in text.splitlines():
+        header = re.fullmatch(r"[0-9a-f]+ <(.+)>:", line)
+        if header:
+            caller = header[1]
+        if re.search(r"\bb(?:lx?|\.w)?\s+0x[0-9a-f]+ <(?:machine\.(?:GetRNG|getRNG)|runtime\.hardwareRand)>", line):
+            calls.append(caller)
+    return calls
+
+
 def parse_c_frames(text):
     frames = {}
     for line in text.splitlines():
@@ -277,6 +295,9 @@ def main():
     stack = stack_table(output("llvm-objdump", "-s", "-j", ".tinygo_stacksizes"))
     c_frames = parse_c_frames(args.ble_stack_usage.read_text()) if args.ble_stack_usage else None
     result = audit(symbols, frames, stack, c_frames)
+    result["runtime_rng_callers"] = runtime_rng_calls(output("llvm-objdump", "-d"))
+    if result["runtime_rng_callers"] != ["Reset_Handler", "Reset_Handler"]:
+        result["errors"].append("TinyGo RNG call sites changed; review sleep cleanup and shared ownership with NimBLE")
     result["elf"] = str(args.elf)
     sized_symbols = output("llvm-nm", "--print-size")
     result["largest_static_ram_symbols"] = largest_ram_symbols(sized_symbols)

@@ -39,6 +39,7 @@ func waitForInput(duration time.Duration) {
 		interrupt.Restore(state)
 		return
 	}
+	stopRuntimeRNG(timeRadioNeedsService())
 	ticks := idleRTCTicks(duration)
 	// InfiniTime's tickless port keeps IRQs pending during the sleep handoff.
 	// This closes the check/sleep race: the ISR cannot consume a wake event

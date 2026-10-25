@@ -5,6 +5,59 @@ and side-button recovery continue working. These changes have host-test and
 firmware-build coverage; battery life and sleep current still need measurement
 on a watch.
 
+## Sleep pass (2026-10-22, candidate 0.3.35)
+
+After installing 0.3.34, the user reports roughly 50 hours to low battery while
+asleep with Bluetooth off. This is a new observation, not a continuation of the
+earlier 91%-after-17-hours extrapolation. It does not isolate a measured current
+or calibrate the voltage-based gauge.
+
+The audit found a separate, reproducible boot-time leak. TinyGo 0.42 calls
+`runtime.initRand` before starting the application. Its
+[hardware seed reader](https://github.com/tinygo-org/tinygo/blob/v0.42.0/src/runtime/rand_hwrng.go)
+calls `machine.GetRNG` twice; the
+[nRF driver](https://github.com/tinygo-org/tinygo/blob/v0.42.0/src/machine/machine_nrf.go)
+starts RNG once, remembers `rngStarted=true`, and never stops it. The linked
+0.3.34 ELF confirms both calls in `Reset_Handler`. Nordic documents that
+[RNG generates continuously until STOP](https://docs.nordicsemi.com/r/bundle/ps_nrf52832/page/rng.html).
+This path runs even when Bluetooth has never been enabled. NimBLE cleanup
+already stops RNG, but that radio lifecycle path is not reached when Bluetooth
+is left off from boot.
+
+`rng_pinetime.go` now stops the runtime-owned generator during display setup
+and at the interrupt-masked idle handoff when the radio is fully inactive.
+It also clears TinyGo's remembered start flag: stopping hardware alone would
+make a subsequent Go RNG read wait forever. The bridge uses TinyGo's `extern`
+directive to reference the existing flag and host Go's `linkname` for tests.
+An active or draining Bluetooth session keeps ownership of RNG, including
+when its entropy pool temporarily stops generation. Radio lifecycle checks
+remain authoritative; the UI's Bluetooth toggle alone is not used as a guard.
+
+The watchdog wait now uses one quarter of its actual reload period, bounded by
+the existing four-minute RTC limit, without the additional one-second cap.
+For a five-second watchdog this is 1.25 seconds: 20% fewer watchdog-only wakeups.
+Short watchdogs retain the same margin. Button/charger interrupts and earlier
+alarm, countdown, debounce, vibration and radio deadlines still wake promptly;
+holding the physical button still inhibits watchdog feeding.
+
+Validation uses `scripts/test-runtime-rng.py` to compile the actual pinned
+TinyGo getter and the production cleanup against a test register model. It
+reproduces the retained running state, verifies 20 read/sleep/restart cycles,
+and checks the active/draining-radio exclusion. The BLE ELF resource gate also
+checks that Go's polling RNG is only called from boot: new consumers would
+require coordination with NimBLE's interrupt-driven entropy collection.
+Both cleanup sites and the shared flag were inspected in the compiled ARM
+code. Go tests/vet, the existing NimBLE host and PHY tests under ASan/UBSan,
+and the BLE build/resource gate pass.
+
+This establishes another peripheral left running, but does not establish how
+much of the 50-hour drain it explains. The candidate was subsequently uploaded
+in-app on 2026-10-22 and the watch verified the image; boot/KEEP and battery
+impact remain unconfirmed. Compare a fresh boot with Bluetooth left off
+against a boot followed by a Bluetooth connection and shutdown, using the same
+charge level and touch-wake setting. Candidate/package details are recorded
+in [0.3.35](releases/0.3.35.md).
+
 ## Bluetooth-off investigation (2026-10-16)
 
 The user reported 91% remaining after 17 hours asleep with Bluetooth turned
@@ -55,8 +108,9 @@ resource report are `build/ble/shutdown-check.elf` and
 reported drain.** No sleep-current measurement or on-watch validation of this
 fix has occurred. Version 0.3.34 was subsequently uploaded in-app on 2026-10-16;
 the watch verified the image, and the user confirmed installation, boot and
-KEEP on 2026-10-16. They plan to leave Bluetooth off and check the battery on
-2026-10-17; battery impact remains unmeasured.
+KEEP on 2026-10-16. On 2026-10-22 they reported roughly 50 hours to low battery
+with Bluetooth off; this does not isolate the impact of the CCM/AAR fix. See
+the follow-up sleep pass above for the separate boot RNG finding.
 See [the transfer record](releases/0.3.34.md). Compare Bluetooth-never-started sleep with sleep after an
 encrypted connection and Turn off, using the same firmware and settings.
 
@@ -167,9 +221,9 @@ button polling for comparison; 0.3.6 supersedes that candidate.
   masking or button-circuit pulsing as in 0.3.4.
 - RTC2 supplies a one-shot deadline. RTC0 remains NimBLE's and RTC1 remains
   TinyGo's. The deadline is the earliest application, display timeout, debounce,
-  vibration, or watchdog deadline. With a normal inherited watchdog and no
-  other work, idle wakes once per second; shorter watchdog timeouts use one
-  quarter of their reload period. Without a running watchdog, a four-minute
+  vibration, or watchdog deadline. The original implementation capped watchdog
+  waits at one second; the 0.3.35 candidate removes that cap while retaining
+  one quarter of the reload period. Without a running watchdog, a four-minute
   cap bounds RTC wrap handling. Holding the physical button stops watchdog
   feeding for recovery.
 - Active touch contact uses 2 ms tracking, and an active/draining BLE session
@@ -247,7 +301,8 @@ downgrading to a firmware version without this setting if current state matters.
 | Touch I2C | TinyGo leaves TWI1 enabled after transfers. Now enabled only for a transaction and disabled afterward, including errors. No touch polling or reads while asleep with touch wake Off. |
 | Battery | Samples every five seconds awake in candidate 0.3.7, with no periodic samples while asleep; button/touch/alert wake refreshes immediately. Pending settings writes take a fresh sample only at the write boundary. SAADC is disabled between completed conversions. |
 | Application loop | Sleep skips rendering, stopwatch/countdown animation, minute redraw deadlines, update-page expiry redraws, and closed time-sync-page polls. Timer and alarm deadlines still take precedence. Pending settings retain their two-second save deadline independently of battery sampling. |
-| Side button/watchdog | Low-power PORT interrupts with BUTTON_OUT high. RTC2 waits until work is due or watchdog service is needed (normally 1 s). Held presses inhibit feeding. Active contact uses 2 ms tracking; local 0.3.9 BLE uses queue/callout deadlines and IRQ wakeups. |
+| Side button/watchdog | Low-power PORT interrupts with BUTTON_OUT high. RTC2 waits until work is due or watchdog service is needed (one quarter of the watchdog period in candidate 0.3.35). Held presses inhibit feeding. Active contact uses 2 ms tracking; local 0.3.9 BLE uses queue/callout deadlines and IRQ wakeups. |
+| Runtime RNG | Candidate 0.3.35 stops TinyGo's continuously running boot RNG and resets its driver flag while Bluetooth is fully inactive. Active/draining Bluetooth retains ownership. |
 | Bluetooth | Starts for explicit time/weather sync or opt-in phone mode in local 0.3.9. Sleep cancels standalone time/weather windows; phone sessions survive sleep. Off, expiry or error stop the session; existing teardown disables radio/RNG and releases HFXO. Continue pumping through asynchronous disconnect, then skip the pump once the host is stopped. RTC0 remains allocated after first use; no changes to its ownership. Verify current returns to baseline after repeated connection windows. |
 | External flash/UART/regulator | Already sends external flash deep-power-down at boot, disables UART0, and enables DC/DC. |
 | Vibration | Already off outside bounded alert pulses; sleep dismissal and error exits turn it off. |

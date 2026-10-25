@@ -163,9 +163,15 @@ func TestIdleTimerBoundsAndWatchdog(t *testing.T) {
 	for _, reload := range []uint32{3276, 32767, 5*32768 - 1, 0xffffffff} {
 		interval := idleWatchdogInterval(true, reload)
 		period := time.Duration(uint64(reload)+1) * time.Second / 32768
-		if interval > time.Second || interval > period/4 || interval < minimumLoopWait {
+		if interval > idleMaxWait || interval > period/4 || interval < minimumLoopWait {
 			t.Fatal("unsafe watchdog service interval", reload, interval, period)
 		}
+	}
+	if got := idleWatchdogInterval(true, 5*32768-1); got != 1250*time.Millisecond {
+		t.Fatal("five-second watchdog still wakes earlier than needed", got)
+	}
+	if got := idleWatchdogInterval(true, 0xffffffff); got != idleMaxWait {
+		t.Fatal("long watchdog exceeds the RTC wait bound", got)
 	}
 	if idleWatchdogInterval(false, 0) != idleMaxWait {
 		t.Fatal("watchdog disabled still adds wakeups")

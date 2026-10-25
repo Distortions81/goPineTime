@@ -80,7 +80,9 @@ func idleWatchdogInterval(running bool, reload uint32) time.Duration {
 		return idleMaxWait
 	}
 	quarter := time.Duration(uint64(reload)+1) * time.Second / (32768 * 4)
-	return max(minimumLoopWait, min(time.Second, quarter))
+	// Keep the same three-quarter-period margin without waking every second
+	// when the inherited watchdog permits a longer interval.
+	return max(minimumLoopWait, min(idleMaxWait, quarter))
 }
 
 func idleRTCTicks(duration time.Duration) uint32 {

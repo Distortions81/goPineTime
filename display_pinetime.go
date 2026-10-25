@@ -48,6 +48,7 @@ func openDisplay() (clockDisplay, error) {
 	// serial pins, so explicitly turn it off.
 	nrf.POWER.DCDCEN.Set(nrf.POWER_DCDCEN_DCDCEN)
 	nrf.UART0.ENABLE.Set(0)
+	stopRuntimeRNG(false)
 
 	// MCUboot leaves the low-brightness channel on. Take ownership of all
 	// three active-low channels, not just the one used by the LCD driver.
