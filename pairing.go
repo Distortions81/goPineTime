@@ -146,7 +146,7 @@ func (u *watchUI) handlePairingSettings(e inputEvent) {
 	}
 }
 func (u *watchUI) drawPairing(d canvas) {
-	centered(d, &uifont.Bold18, 31, "PAIR DEVICE", white)
+	centered(d, &uifont.Regular18, 31, "PAIR DEVICE", white)
 	centered(d, &uifont.Regular18, 70, "Enter this code", muted)
 	centered(d, &uifont.Regular18, 95, "on your device", muted)
 	var digits [6]byte
@@ -155,14 +155,14 @@ func (u *watchUI) drawPairing(d canvas) {
 		digits[i] = byte(code%10) + '0'
 		code /= 10
 	}
-	centered(d, &uifont.Bold24, 143, string(digits[:]), accent)
+	centered(d, &uifont.Regular18, 143, string(digits[:]), accent)
 	centered(d, &uifont.Regular18, pairingStageBaseline, pairingStageText(u.pairing.progress), muted)
 	clockControl(d, 16, 188, 208, 44, "CANCEL", card)
 }
 func (u *watchUI) drawPairingSettings(d canvas, now time.Time) {
 	_ = now
 	p := u.pairing
-	centered(d, &uifont.Bold18, 29, "DEVICES", white)
+	centered(d, &uifont.Regular18, 29, "DEVICES", white)
 	pairAction := "Tap Pair a device"
 	if !u.phoneAuto && (u.phone == nil || u.phone.mode == phoneOff) {
 		pairAction = "Turn on Bluetooth"

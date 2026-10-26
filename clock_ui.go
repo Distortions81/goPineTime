@@ -99,20 +99,20 @@ func clockControlLabel(d canvas, x, y, w, h int16, label string, c, foreground c
 		return
 	}
 	gfx.RoundBox(d, x, y, w, h, 6, c)
-	tw, _ := lineWidth(&uifont.Bold18, label)
-	writeLine(d, &uifont.Bold18, x+(w-int16(tw))/2, y+h/2+7, label, foreground)
+	tw, _ := lineWidth(&uifont.Regular18, label)
+	writeLine(d, &uifont.Regular18, x+(w-int16(tw))/2, y+h/2+7, label, foreground)
 }
 
 func controlVisible(d canvas, y, height, baseline int16) bool {
 	_, top, _, bottom := gfx.Bounds(d)
-	lo, hi := uifont.Bold18.VerticalBounds()
+	lo, hi := uifont.Regular18.VerticalBounds()
 	return min(int(y), int(baseline)+int(lo)) < bottom &&
 		max(int(y)+int(height), int(baseline)+int(hi)) > top
 }
 
 func (u *watchUI) drawClockSettings(d canvas, now time.Time) {
 	if u.page == pageTimeSettings {
-		centered(d, &uifont.Bold18, 29, "TIME & DATE", white)
+		centered(d, &uifont.Regular18, 29, "TIME & DATE", white)
 		clockControl(d, 16, 42, 208, 40, "SET TIME", card)
 		clockControl(d, 16, 88, 208, 40, "SET DATE", card)
 		label := "FORMAT: 12 HOUR"
@@ -130,7 +130,7 @@ func (u *watchUI) drawClockSettings(d canvas, now time.Time) {
 	if u.page == pageSetDate {
 		title = "SET DATE"
 	}
-	centered(d, &uifont.Bold18, 29, title, white)
+	centered(d, &uifont.Regular18, 29, title, white)
 	if u.page == pageSetTime || u.page == pageAlarmEdit {
 		hour := u.edit.hour
 		if !u.use24 {
@@ -144,8 +144,8 @@ func (u *watchUI) drawClockSettings(d canvas, now time.Time) {
 			clockControl(d, x, 48, 88, 44, "+", card)
 			clockControl(d, x, 136, 88, 44, "-", card)
 			label := twoDigits(v)
-			w, _ := lineWidth(&uifont.Bold24, label)
-			writeLine(d, &uifont.Bold24, x+(88-int16(w))/2, 114, label, white)
+			w, _ := lineWidth(&uifont.Regular18, label)
+			writeLine(d, &uifont.Regular18, x+(88-int16(w))/2, 114, label, white)
 			caption := "MINUTE"
 			if i == 0 {
 				caption = "HOUR"
@@ -166,8 +166,8 @@ func (u *watchUI) drawClockSettings(d canvas, now time.Time) {
 			clockControl(d, x, 48, 64, 44, "+", card)
 			clockControl(d, x, 136, 64, 44, "-", card)
 			label := twoDigits(v)
-			w, _ := lineWidth(&uifont.Bold18, label)
-			writeLine(d, &uifont.Bold18, x+(64-int16(w))/2, 114, label, white)
+			w, _ := lineWidth(&uifont.Regular18, label)
+			writeLine(d, &uifont.Regular18, x+(64-int16(w))/2, 114, label, white)
 			labels := [...]string{"YEAR", "MON", "DAY"}
 			w, _ = lineWidth(&uifont.Regular18, labels[i])
 			writeLine(d, &uifont.Regular18, x+(64-int16(w))/2, 132, labels[i], muted)

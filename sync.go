@@ -197,12 +197,12 @@ func (u *watchUI) handleTimeSync(e inputEvent, now time.Time) {
 }
 
 func (u *watchUI) drawTimeSync(d canvas, now time.Time) {
-	centered(d, &uifont.Bold18, 29, "BLUETOOTH TIME", white)
+	centered(d, &uifont.Regular18, 29, "BLUETOOTH TIME", white)
 	if u.sync.Pending {
 		centered(d, &uifont.Regular18, 69, "Use received time?", muted)
 		stamp := u.sync.Proposed.Add(now.Sub(u.sync.Received))
 		clock, date := syncTimeDigits(stamp), syncDateDigits(stamp)
-		centered(d, &uifont.Bold24, 105, string(clock[:]), accent)
+		centered(d, &uifont.Regular18, 105, string(clock[:]), accent)
 		centered(d, &uifont.Regular18, 133, string(date[:]), white)
 		centered(d, &uifont.Regular18, 166, "Check before accepting", muted)
 		clockControl(d, 126, 188, 102, 44, "ACCEPT", positive)

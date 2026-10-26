@@ -13,7 +13,6 @@ import (
 type Font struct {
 	first, last           rune
 	index, data           string
-	characters            string // Optional sorted sparse repertoire; empty means first..last.
 	lineHeight            uint8
 	pixelTop, pixelBottom int16
 	glyph                 glyph
@@ -29,29 +28,14 @@ type glyph struct {
 func (f *Font) GetYAdvance() uint8             { return f.lineHeight }
 func (f *Font) VerticalBounds() (int16, int16) { return f.pixelTop, f.pixelBottom }
 
-// Resolve the dense or sparse repertoire and its unsupported-rune fallback.
+// Resolve the contiguous repertoire and its unsupported-rune fallback.
 func (f *Font) glyphIndex(r rune) (rune, int) {
 	index := int(r - f.first)
 	if r < f.first || r > f.last {
 		r = f.first
 		index = 0
 	}
-	if f.characters != "" {
-		// Generated sparse fonts are ASCII. Binary search avoids a map in RAM.
-		lo, hi := 0, len(f.characters)
-		for lo < hi {
-			mid := (lo + hi) / 2
-			if rune(f.characters[mid]) < r {
-				lo = mid + 1
-			} else {
-				hi = mid
-			}
-		}
-		index = lo
-		if lo == len(f.characters) || rune(f.characters[lo]) != r {
-			r, index = f.first, 0
-		}
-	}
+
 	return r, index
 }
 
@@ -63,14 +47,14 @@ func (f *Font) LineWidth(text string) (inner, outer uint32) {
 	}
 	for _, r := range text {
 		_, index := f.glyphIndex(r)
-		i := index * 3
-		offset := int(f.index[i])<<16 | int(f.index[i+1])<<8 | int(f.index[i+2])
+		i := index * 2
+		offset := int(f.index[i])<<8 | int(f.index[i+1])
 		outer += uint32(f.data[offset+2])
 	}
 	metric := func(r rune) (width, advance uint8, offset int8) {
 		_, index := f.glyphIndex(r)
-		i := index * 3
-		at := int(f.index[i])<<16 | int(f.index[i+1])<<8 | int(f.index[i+2])
+		i := index * 2
+		at := int(f.index[i])<<8 | int(f.index[i+1])
 		return f.data[at] & 127, f.data[at+2], int8(f.data[at+3])
 	}
 	_, _, first := metric(rune(text[0]))
@@ -83,15 +67,15 @@ func (f *Font) LineWidth(text string) (inner, outer uint32) {
 // display goroutine. It is not intended for concurrent rendering.
 func (f *Font) GetGlyph(r rune) tinyfont.Glypher {
 	r, index := f.glyphIndex(r)
-	i := index * 3
-	offset := int(f.index[i])<<16 | int(f.index[i+1])<<8 | int(f.index[i+2])
+	i := index * 2
+	offset := int(f.index[i])<<8 | int(f.index[i+1])
 	d := f.data[offset:]
 	f.glyph.info = tinyfont.GlyphInfo{Rune: r, Width: d[0] & 127, Height: d[1], XAdvance: d[2], XOffset: int8(d[3]), YOffset: int8(d[4])}
 	n := (int(d[0]&127)*int(d[1]) + 1) / 2
 	if d[0]&128 != 0 {
 		end := len(f.data)
-		if i+3 < len(f.index) {
-			end = int(f.index[i+3])<<16 | int(f.index[i+4])<<8 | int(f.index[i+5])
+		if i+2 < len(f.index) {
+			end = int(f.index[i+2])<<8 | int(f.index[i+3])
 		}
 		n = end - offset - 5
 	}

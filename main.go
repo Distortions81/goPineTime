@@ -64,9 +64,9 @@ func openApplication() (*watchApplication, error) {
 		last := -1
 		current := 0
 		draw := func(c canvas) {
-			centered(c, &uifont.Bold18, 65, title, white)
-			centered(c, &uifont.Bold24, 130, decimal(current)+"%", accent)
-			centered(c, &uifont.Bold18, 175, "Keep power connected", muted)
+			centered(c, &uifont.Regular18, 65, title, white)
+			centered(c, &uifont.Regular18, 130, decimal(current)+"%", accent)
+			centered(c, &uifont.Regular18, 175, "Keep power connected", muted)
 		}
 		return func(percent int) {
 			if percent/5 == last {

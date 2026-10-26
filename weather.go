@@ -184,7 +184,7 @@ func forecastDay(local time.Time, index int) time.Time {
 
 func (u *watchUI) drawWeather(d canvas, now time.Time) {
 	w := u.weather
-	centered(d, &uifont.Bold18, 29, "WEATHER", white)
+	centered(d, &uifont.Regular18, 29, "WEATHER", white)
 	if w == nil {
 		return
 	}
@@ -193,7 +193,7 @@ func (u *watchUI) drawWeather(d canvas, now time.Time) {
 		unit = "F"
 	}
 	if u.page != pageWeatherSync {
-		writeLine(d, &uifont.Bold18, 203, 29, unit, accent)
+		writeLine(d, &uifont.Regular18, 203, 29, unit, accent)
 	}
 	if u.page == pageWeatherSync {
 		centered(d, &uifont.Regular18, 68, "Connect to InfiniTime", white)
@@ -223,7 +223,7 @@ func (u *watchUI) drawWeather(d canvas, now time.Time) {
 				}
 				centered(d, &uifont.Regular18, 60, city, muted)
 			}
-			centered(d, &uifont.Bold18, 93, decimal(weather.Degrees(v.Temp, w.fahrenheit))+" "+unit, accent)
+			centered(d, &uifont.Regular18, 93, decimal(weather.Degrees(v.Temp, w.fahrenheit))+" "+unit, accent)
 			centered(d, &uifont.Regular18, 121, weather.Condition(v.Icon), white)
 			centered(d, &uifont.Regular18, 148, "Lo "+decimal(weather.Degrees(v.Low, w.fahrenheit))+" / Hi "+decimal(weather.Degrees(v.High, w.fahrenheit)), muted)
 			drawWeatherAge(d, w.currentReceived, now, 176)

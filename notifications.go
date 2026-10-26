@@ -211,7 +211,7 @@ func (u *watchUI) drawNotifications(d canvas) {
 		return
 	}
 	if u.page == pageInbox {
-		centered(d, &uifont.Bold18, 29, "INBOX", white)
+		centered(d, &uifont.Regular18, 29, "INBOX", white)
 		label, c := "BUZZ ON", card
 		if n.quiet {
 			label, c = "QUIET", positive
@@ -239,7 +239,7 @@ func (u *watchUI) drawNotifications(d canvas) {
 			c := muted
 			if m.Unread {
 				c = white
-				writeLine(d, &uifont.Bold18, 12, y+24, "*", accent)
+				writeLine(d, &uifont.Regular18, 12, y+24, "*", accent)
 			}
 			if next < len(label) {
 				line = line[:min(len(line), 29)]
@@ -262,7 +262,7 @@ func (u *watchUI) drawNotifications(d canvas) {
 	}
 	m := n.inbox.Find(n.selected)
 	if m == nil {
-		centered(d, &uifont.Bold18, 29, "MESSAGE", white)
+		centered(d, &uifont.Regular18, 29, "MESSAGE", white)
 		centered(d, &uifont.Regular18, 110, "Message replaced", white)
 		centered(d, &uifont.Regular18, 142, "Newer messages arrived", muted)
 		clockControl(d, 12, 188, 216, 40, "BACK TO INBOX", card)
@@ -275,7 +275,7 @@ func (u *watchUI) drawNotifications(d canvas) {
 	if m.Category == 4 {
 		header = "MISSED CALL"
 	}
-	centered(d, &uifont.Bold18, 29, header, white)
+	centered(d, &uifont.Regular18, 29, header, white)
 	data, size := notificationText(m)
 	body := data[:size]
 	pos := n.offset

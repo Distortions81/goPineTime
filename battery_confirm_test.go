@@ -86,7 +86,7 @@ func TestBatteryCopyFitsAndRenderingDoesNotAllocate(t *testing.T) {
 	for choice := batteryTouch; choice <= batteryMedium; choice++ {
 		u.askBattery(choice)
 		title, lines := batteryCopy(choice)
-		if width, _ := lineWidth(&uifont.Bold18, title); width > 216 {
+		if width, _ := lineWidth(&uifont.Regular18, title); width > 216 {
 			t.Fatal("title too wide", title, width)
 		}
 		for _, line := range lines {

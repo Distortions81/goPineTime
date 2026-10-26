@@ -342,8 +342,8 @@ func drawButton(d canvas, x, width int16, label string, confirm bool) {
 		c = positive
 	}
 	gfx.RoundBox(d, x, 174, width, 44, 6, c)
-	w, _ := lineWidth(&uifont.Bold18, label)
-	writeLine(d, &uifont.Bold18, x+width/2-int16(w)/2, 202, label, white)
+	w, _ := lineWidth(&uifont.Regular18, label)
+	writeLine(d, &uifont.Regular18, x+width/2-int16(w)/2, 202, label, white)
 }
 
 // Split without allocating a []string or concatenating progressively longer
@@ -424,7 +424,7 @@ func (u *watchUI) draw(d canvas, now time.Time) {
 	}
 	if u.page == pageClock {
 		now = u.clock.Now(now)
-		writeLine(d, &uifont.Bold18, 18, 31, "goPine", accent)
+		writeLine(d, &uifont.Regular18, 18, 31, "goPine", accent)
 		meridiem := ""
 		if !u.use24 {
 			meridiem = formatMeridiem(now)
@@ -472,7 +472,7 @@ func (u *watchUI) draw(d canvas, now time.Time) {
 		return
 	}
 	if u.page == pageSettings {
-		centered(d, &uifont.Bold18, 29, "Settings", white)
+		centered(d, &uifont.Regular18, 29, "Settings", white)
 		clockControl(d, 16, 42, 208, 40, "Time & date", card)
 		clockControl(d, 16, 88, 208, 40, "Bluetooth", card)
 		clockControl(d, 16, 134, 208, 40, "Display", card)
@@ -482,22 +482,22 @@ func (u *watchUI) draw(d canvas, now time.Time) {
 	centered(d, &uifont.Regular18, 29, "goPine "+firmwareVersion, muted)
 	switch u.page {
 	case pageUpdate:
-		centered(d, &uifont.Bold24, 64, "Install update", white)
+		centered(d, &uifont.Regular18, 64, "Install update", white)
 		centered(d, &uifont.Regular18, 88, "Hold to connect", muted)
 		remaining := 30 - u.holdStep
 		countdown := decimal(remaining/10) + "." + decimal(remaining%10) + "s"
-		centered(d, &uifont.Bold24, updateCounterBaseline, countdown, accent)
+		centered(d, &uifont.Regular18, updateCounterBaseline, countdown, accent)
 		gfx.FillBox(d, 30, updateProgressY, 180, 3, card)
 		gfx.FillBox(d, 30, updateProgressY, int16(u.holdStep)*180/30, 3, accent)
 		centered(d, &uifont.Regular18, 159, "Swipe back to cancel", muted)
 		drawButton(d, 24, 192, "PRESS AND HOLD", true)
 	case pageTrial:
-		centered(d, &uifont.Bold24, 64, "Keep this build?", white)
+		centered(d, &uifont.Regular18, 64, "Keep this build?", white)
 		drawLines(d, "Keep this version or restart to go back.")
 		drawButton(d, 12, 102, "REVERT", false)
 		drawButton(d, 126, 102, "KEEP", true)
 	case pageMessage:
-		centered(d, &uifont.Bold24, 64, "Firmware update", white)
+		centered(d, &uifont.Regular18, 64, "Firmware update", white)
 		drawLines(d, u.message)
 		drawButton(d, 40, 160, "BACK", false)
 	}

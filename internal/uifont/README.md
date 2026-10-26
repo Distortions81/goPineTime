@@ -1,20 +1,24 @@
 # goPine UI fonts
 
 Checked-in 4-bit coverage tables rasterized from DejaVu Sans 2.37. The clock
-contains only digits and colon; Bold24 contains the 43 characters needed by
-fixed titles, numeric values, and AM/PM. Regular18 and Bold18 retain printable
-ASCII, including the characters needed for general error messages. These are
+contains only digits and colon. Regular18 retains printable ASCII and is used
+for all other text and numeric displays, including general error messages. These are
 native-size antialiased glyphs, not enlarged one-bit bitmaps or a blur pass.
 Coverage is composited onto the actual background using premultiplied RGBA.
 
 The tables are immutable Go strings, avoiding a mutable bitmap allocation per
 glyph. The display goroutine reuses one glyph descriptor per font. Watch UI
 labels use at least the 18px fonts; captions are shortened to fit rather than
-using tiny metadata text. The legacy 14px AM/PM asset remains in the generated
-tables but is no longer used by the watch UI.
+using tiny metadata text. Bold18, Bold24, and the unused 14px AM/PM asset have
+been removed from both the generator and checked-in tables. Two antialiased
+fonts remain; no sparse-repertoire lookup is needed.
+The tiny status-battery readout has its own 50-byte, one-bit 5×7 digit table
+in `battery_status.go`; it displays only 0–100 beside the battery icon.
 
 Each glyph uses either packed 4-bit coverage or a lossless packet format,
-whichever is smaller. The generator uses dynamic programming to minimize the
+whichever is smaller. Each font has a big-endian 16-bit glyph-offset index;
+the generator rejects offsets beyond 65,535 bytes. This replaces the earlier
+24-bit index without changing any glyph pixels or metrics. The generator uses dynamic programming to minimize the
 encoded byte count within each row. A five-byte metrics header stores width (low seven bits),
 an RLE flag (high bit), height, advance, and signed X/Y offsets. RLE packets are:
 
@@ -32,11 +36,11 @@ rectangle fills. No decompression buffer or runtime font parser is retained.
 Generated vertical bounds also reject entire off-strip text lines before layout.
 Unknown characters retain the existing first-glyph fallback.
 
-The four linked fonts' glyph data shrank from 37,882 to 25,501 bytes, including
-metrics and row offsets but excluding character index tables. Pixel fingerprints from the original tables
-verify that retained glyphs and their antialiasing are unchanged. When adding a
-Bold24 label, update its repertoire in the generator; a test checks literal UI
-labels and the known dynamic numeric/status labels.
+The two linked fonts contain 11,867 bytes of glyph data, including metrics
+and row offsets, plus 212 bytes of character indexes. Pixel fingerprints from
+the original tables verify that retained glyphs and their antialiasing are
+unchanged. A test checks fixed Regular18 labels and dynamic numeric/status labels
+against its repertoire.
 
 Normal Go/TinyGo builds need no font files or Python installation. To regenerate:
 

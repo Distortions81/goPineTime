@@ -43,7 +43,7 @@ func (u *watchUI) handleDisplaySettings(e inputEvent) {
 	}
 }
 func (u *watchUI) drawDisplaySettings(d canvas) {
-	centered(d, &uifont.Bold18, 29, "Display", white)
+	centered(d, &uifont.Regular18, 29, "Display", white)
 	theme, wake, flip := "Theme: Dark", "Touch wake: Off", "Rotation: Normal"
 	if u.lightMode {
 		theme = "Theme: Light"

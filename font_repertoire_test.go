@@ -12,9 +12,9 @@ import (
 	"github.com/Distortions81/goPine/internal/uifont"
 )
 
-// New fixed titles must be added to the generator's sparse Bold24 repertoire.
+// Guard fixed text and numeric displays against future repertoire trimming.
 // Catch omissions at their call site instead of silently drawing a space.
-func TestLargeFontCoversLiteralUIStrings(t *testing.T) {
+func TestRegularTextCoversLiteralUIStrings(t *testing.T) {
 	paths, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestLargeFontCoversLiteralUIStrings(t *testing.T) {
 			large := false
 			for _, arg := range call.Args {
 				if ptr, ok := arg.(*ast.UnaryExpr); ok && ptr.Op == token.AND {
-					if sel, ok := ptr.X.(*ast.SelectorExpr); ok && sel.Sel.Name == "Bold24" {
+					if sel, ok := ptr.X.(*ast.SelectorExpr); ok && sel.Sel.Name == "Regular18" {
 						large = true
 					}
 				}
@@ -49,8 +49,8 @@ func TestLargeFontCoversLiteralUIStrings(t *testing.T) {
 							t.Fatal(err)
 						}
 						for _, r := range label {
-							if uifont.Bold24.GetGlyph(r).Info().Rune != r {
-								t.Errorf("%s: Bold24 lacks %q; update scripts/generate-fonts.py", fset.Position(lit.Pos()), r)
+							if uifont.Regular18.GetGlyph(r).Info().Rune != r {
+								t.Errorf("%s: Regular18 lacks %q; update scripts/generate-fonts.py", fset.Position(lit.Pos()), r)
 							}
 						}
 					}
@@ -61,7 +61,7 @@ func TestLargeFontCoversLiteralUIStrings(t *testing.T) {
 	}
 	for _, label := range []string{"0123456789: .%", "AM PM", "ALARM", "TIMER DONE"} {
 		for _, r := range label {
-			if uifont.Bold24.GetGlyph(r).Info().Rune != r {
+			if uifont.Regular18.GetGlyph(r).Info().Rune != r {
 				t.Errorf("dynamic labels require %q", r)
 			}
 		}

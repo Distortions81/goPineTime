@@ -19,7 +19,7 @@ func (s *countingStrip) SetPixel(x, y int16, c color.RGBA) {
 }
 
 func TestDirectTextPreservesTinyFontPixels(t *testing.T) {
-	for _, font := range []tinyfont.Fonter{&uifont.Regular18, &uifont.Bold18, &uifont.Bold24, &uifont.Meridiem, &uifont.Clock, &tinyfont.Picopixel} {
+	for _, font := range []tinyfont.Fonter{&uifont.Regular18, &uifont.Clock, &tinyfont.Picopixel} {
 		for _, at := range [][2]int16{{18, 31}, {-5, 2}, {100, 234}} {
 			ref, got := &memoryDisplay{}, &memoryDisplay{}
 			ref.FillScreen(black)
@@ -37,7 +37,7 @@ func TestAATextSkipsOffStripGlyphPixels(t *testing.T) {
 	s := &countingStrip{}
 	// This text is entirely below the top strip; no bitmap allocation is
 	// necessary because clipping should prevent EVERY SetPixel call.
-	writeLine(s, &uifont.Bold18, 24, 202, "HOLD 3 SECONDS", white)
+	writeLine(s, &uifont.Regular18, 24, 202, "HOLD 3 SECONDS", white)
 	if s.calls != 0 {
 		t.Fatal("off-strip text was rasterized", s.calls)
 	}
@@ -73,7 +73,7 @@ func (f *countedFont) GetGlyph(r rune) tinyfont.Glypher {
 }
 
 func TestOffStripLineSkipsLayout(t *testing.T) {
-	font := countedFont{Font: &uifont.Bold18}
+	font := countedFont{Font: &uifont.Regular18}
 	s := &countingStrip{}
 	centered(s, &font, 202, "HOLD 3 SECONDS", white)
 	if font.lookups != 0 {

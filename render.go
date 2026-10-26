@@ -23,8 +23,16 @@ type frameRenderer struct {
 
 type stripCanvas struct {
 	bitmap    pixel.Image[pixel.RGB444BE]
+	buffer    []byte // Alias of the fixed bitmap, cached once rather than per pixel.
 	y         int16
 	lightMode bool
+}
+
+func (s *stripCanvas) rawBuffer() []byte {
+	if s.buffer == nil {
+		s.buffer = s.bitmap.RawBuffer()
+	}
+	return s.buffer
 }
 
 func (r *frameRenderer) invalidate() { r.valid = 0 }
@@ -39,7 +47,7 @@ func changedStrips(previous, next *frameKey) uint32 {
 	if before.page != next.page {
 		return allStrips
 	}
-	lo, hi := uifont.Bold24.VerticalBounds()
+	lo, hi := uifont.Regular18.VerticalBounds()
 	top, bottom := timerValueBaseline+int(lo), timerValueBaseline+int(hi)
 	switch next.page {
 	case pageStopwatch, pageCountdown:
@@ -83,7 +91,7 @@ func (r *frameRenderer) renderStrips(d clockDisplay, draw func(canvas), mask uin
 		r.strip.y = int16(i * stripHeight)
 		r.strip.FillScreen(black)
 		draw(&r.strip)
-		hash := framehash.Sum32(r.strip.bitmap.RawBuffer())
+		hash := framehash.Sum32(r.strip.rawBuffer())
 		if r.valid&bit == 0 || r.hashes[i] != hash {
 			if err := d.DrawBitmap(0, r.strip.y, r.strip.bitmap); err != nil {
 				return err
@@ -115,7 +123,7 @@ func (s *stripCanvas) SetPixel(x, y int16, c color.RGBA) {
 	// directly on the two affected bytes and preserve the neighboring nibble.
 	n := (int(y)-int(s.y))*240 + int(x)
 	i := n * 3 / 2
-	buf := s.bitmap.RawBuffer()
+	buf := s.rawBuffer()
 	if c.A != 255 {
 		var value pixel.RGB444BE
 		if n&1 == 0 {
@@ -135,7 +143,7 @@ func (s *stripCanvas) SetPixel(x, y int16, c color.RGBA) {
 }
 func (s *stripCanvas) FillScreen(c color.RGBA) {
 	if c.R == 0 && c.G == 0 && c.B == 0 {
-		clear(s.bitmap.RawBuffer())
+		clear(s.rawBuffer())
 		return
 	}
 	s.bitmap.FillSolidColor(pixel.NewColor[pixel.RGB444BE](c.R, c.G, c.B))
@@ -156,7 +164,7 @@ func (s *stripCanvas) FillRectangle(x, y, width, height int16, c color.RGBA) err
 		return nil
 	}
 	value := pixel.NewColor[pixel.RGB444BE](c.R, c.G, c.B)
-	buf := s.bitmap.RawBuffer()
+	buf := s.rawBuffer()
 	for yy := y0; yy < y1; yy++ {
 		start, end := (yy-int(s.y))*240+x0, (yy-int(s.y))*240+x1
 		// RGB444 packs two pixels into three bytes. Preserve the neighboring

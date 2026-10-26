@@ -54,7 +54,7 @@ func (u *watchUI) handleAppsTap(e inputEvent) {
 }
 
 func drawApps(d canvas) {
-	centered(d, &uifont.Bold18, 29, "APPS", white)
+	centered(d, &uifont.Regular18, 29, "APPS", white)
 	for index := 0; index < 6; index++ {
 		x, y := appCardPosition(index)
 		if !controlVisible(d, y, appCardHeight, y+48) {

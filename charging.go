@@ -53,7 +53,7 @@ func drawCharging(d canvas, p powerStatus) {
 		}
 	}
 	c := powerColor(p)
-	centered(d, &uifont.Bold18, 31, title, c)
+	centered(d, &uifont.Regular18, 31, title, c)
 	// Large gauge, with the percentage below it to keep 100% legible.
 	gfx.Box(d, 53, 51, 128, 40, 4, c)
 	gfx.FillBox(d, 181, 61, 7, 20, c)
@@ -64,10 +64,10 @@ func drawCharging(d canvas, p powerStatus) {
 	percent, start := percentDigits(p.Percent)
 	digits := string(percent[start:3])
 	w, _ := lineWidth(&uifont.Clock, digits)
-	suffix, _ := lineWidth(&uifont.Bold24, "%")
+	suffix, _ := lineWidth(&uifont.Regular18, "%")
 	x := int16((240 - w - suffix - 4) / 2)
 	writeLine(d, &uifont.Clock, x, 160, digits, white)
-	writeLine(d, &uifont.Bold24, x+int16(w)+4, 160, "%", white)
+	writeLine(d, &uifont.Regular18, x+int16(w)+4, 160, "%", white)
 	centered(d, &uifont.Regular18, 192, detail, muted)
 	centered(d, &uifont.Regular18, 228, "Tap to return", muted)
 }

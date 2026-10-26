@@ -68,7 +68,7 @@ func TestDisplaySettingsRenderBudget(t *testing.T) {
 	for _, light := range []bool{false, true} {
 		for _, level := range []uint8{brightnessHigh, brightnessLow, brightnessMedium} {
 			u.lightMode, u.brightness = light, level
-			if width, _ := lineWidth(&uifont.Bold18, brightnessLabel(level)); width > 196 {
+			if width, _ := lineWidth(&uifont.Regular18, brightnessLabel(level)); width > 196 {
 				t.Fatal("backlight label does not leave card padding", level, width)
 			}
 			if err := renderer.render(d, draw); err != nil {

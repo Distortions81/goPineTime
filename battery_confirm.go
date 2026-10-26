@@ -76,7 +76,7 @@ func batteryCopy(choice batteryChoice) (title string, lines [4]string) {
 
 func (u *watchUI) drawBatteryConfirm(d canvas) {
 	title, lines := batteryCopy(u.batteryChoice)
-	centered(d, &uifont.Bold18, 29, title, white)
+	centered(d, &uifont.Regular18, 29, title, white)
 	centered(d, &uifont.Regular18, 57, "Battery use", accent)
 	for i, line := range lines {
 		centered(d, &uifont.Regular18, int16(89+i*23), line, muted)

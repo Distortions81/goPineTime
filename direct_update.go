@@ -299,7 +299,7 @@ func (u *watchUI) drawTransfer(d canvas) {
 	if t == nil {
 		return
 	}
-	centered(d, &uifont.Bold18, 29, "WATCH UPDATE", white)
+	centered(d, &uifont.Regular18, 29, "WATCH UPDATE", white)
 	title, note := "Ready to connect", "Open updater on PC"
 	switch t.phase {
 	case updateReceiving:
@@ -315,7 +315,7 @@ func (u *watchUI) drawTransfer(d canvas) {
 	if t.phase == updateReady {
 		centered(d, &uifont.Regular18, 114, "goPine "+t.version, accent)
 	} else if t.phase == updateReceiving || t.phase == updateVerifying {
-		centered(d, &uifont.Bold24, 120, decimal(t.percent)+"%", accent)
+		centered(d, &uifont.Regular18, 120, decimal(t.percent)+"%", accent)
 	} else {
 		centered(d, &uifont.Regular18, 114, "Stay on this screen", muted)
 	}

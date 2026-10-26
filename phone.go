@@ -360,7 +360,7 @@ func (u *watchUI) drawPhone(d canvas, now time.Time) {
 		return
 	}
 	if u.page == pagePhone {
-		centered(d, &uifont.Bold18, 29, "BLUETOOTH", white)
+		centered(d, &uifont.Regular18, 29, "BLUETOOTH", white)
 		centered(d, &uifont.Regular18, 62, p.status, accent)
 		label := "Turn on"
 		on := u.phoneAuto || p.mode != phoneOff
@@ -376,7 +376,7 @@ func (u *watchUI) drawPhone(d canvas, now time.Time) {
 		}
 		return
 	}
-	centered(d, &uifont.Bold18, 29, "MUSIC", white)
+	centered(d, &uifont.Regular18, 29, "MUSIC", white)
 	status := p.musicStatus()
 	if p.mode == phoneOff {
 		status = "Bluetooth is off"

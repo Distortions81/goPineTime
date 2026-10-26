@@ -17,7 +17,7 @@ const (
 )
 
 type alarm struct {
-	hour, minute int
+	hour, minute uint8
 	repeat       alarmRepeat
 	enabled      bool
 	next         time.Time // Civil time, unlike duration-based timers below.
@@ -28,7 +28,7 @@ func (a *alarm) schedule(local time.Time) {
 	if !a.enabled {
 		return
 	}
-	due := time.Date(local.Year(), local.Month(), local.Day(), a.hour, a.minute, 0, 0, local.Location())
+	due := time.Date(local.Year(), local.Month(), local.Day(), int(a.hour), int(a.minute), 0, 0, local.Location())
 	for !due.After(local) || (a.repeat == alarmWeekdays && (due.Weekday() == time.Saturday || due.Weekday() == time.Sunday)) {
 		due = due.AddDate(0, 0, 1)
 	}

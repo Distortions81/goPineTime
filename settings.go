@@ -16,7 +16,10 @@ const (
 )
 
 func calendarMillis(local time.Time) int64 {
-	return time.Date(local.Year(), local.Month(), local.Day(), local.Hour(), local.Minute(), local.Second(), local.Nanosecond(), time.UTC).UnixMilli()
+	// Project this instant's local calendar onto UTC without repeatedly
+	// extracting date/clock fields or constructing another time.Time.
+	_, offset := local.Zone()
+	return local.UnixMilli() + int64(offset)*1000
 }
 
 func (u *watchUI) settings() checkpoint.Settings {
@@ -71,7 +74,8 @@ func (u *watchUI) loadRuntime(r checkpoint.Runtime, now time.Time) {
 		t.snooze[i] = now.Add(left)
 	}
 	t.pending = r.Pending
-	resume := &timerResume{saved: r, watch: t.watch, countdown: t.countdown, snooze: t.snooze}
+	var alertElapsed time.Duration
+	alertPending := false
 	if r.Active {
 		elapsed := time.Duration(r.AlertMillis) * time.Millisecond
 		if u.clock.initialized && r.Timestamped&stampAlert != 0 {
@@ -80,10 +84,14 @@ func (u *watchUI) loadRuntime(r checkpoint.Runtime, now time.Time) {
 		if elapsed < alertDuration {
 			// Deliver through tickTimers so restoring also wakes the screen.
 			t.pending |= 1 << r.Source
-			resume.alertElapsed, resume.alertPending = elapsed, true
+			alertElapsed, alertPending = elapsed, true
 		}
 	}
-	t.resume = resume
+	t.resume = nil
+	if r.Timestamped != 0 || alertPending {
+		t.resume = &timerResume{saved: r, watch: t.watch, countdown: t.countdown, snooze: t.snooze,
+			alertElapsed: alertElapsed, alertPending: alertPending}
+	}
 }
 
 func (u *watchUI) reconcileTimers(now time.Time) {
@@ -232,7 +240,7 @@ func loadSettings(u *watchUI, now time.Time, j *checkpoint.Journal) *settingsPer
 			u.phoneAuto = r.Settings.PhoneAuto
 			u.lightMode, u.brightness = r.Settings.LightMode(), r.Settings.Brightness()
 			for i, a := range r.Settings.Alarms {
-				u.timers.alarms[i] = alarm{hour: int(a.Hour), minute: int(a.Minute), repeat: alarmRepeat(a.Repeat), enabled: a.Enabled}
+				u.timers.alarms[i] = alarm{hour: a.Hour, minute: a.Minute, repeat: alarmRepeat(a.Repeat), enabled: a.Enabled}
 			}
 			u.timers.countdown = countdown{preset: time.Duration(r.Settings.CountdownSeconds) * time.Second, remaining: time.Duration(r.Settings.CountdownSeconds) * time.Second}
 			if r.HasRuntime {

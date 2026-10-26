@@ -57,12 +57,12 @@ def encode_runs(values):
     return bytes(output)
 
 
-def make_font(name, path, size, first, last, characters="", stats=False):
+def make_font(name, path, size, first, last, stats=False):
     font = ImageFont.truetype(str(path), size, layout_engine=ImageFont.Layout.BASIC)
     data, index = bytearray(), bytearray()
     raw_size, compressed = 0, 0
     pixel_top, pixel_bottom = 0, 0
-    for code in (map(ord, characters) if characters else range(first, last+1)):
+    for code in range(first, last+1):
         ch = chr(code)
         left, top, right, bottom = font.getbbox(ch, anchor='ls')
         width, height = right-left, bottom-top
@@ -84,16 +84,18 @@ def make_font(name, path, size, first, last, characters="", stats=False):
         use_runs = len(runs) < len(packed)
         raw_size += 5 + len(packed)
         compressed += use_runs
-        index.extend(len(data).to_bytes(3, 'big'))
+        if len(data) > 65535:
+            raise ValueError(f'{name}: glyph offset exceeds 16-bit index')
+        index.extend(len(data).to_bytes(2, 'big'))
         # The width's high bit marks compressed coverage; all glyphs are <128px.
         data.extend((width | (128 if use_runs else 0), height, advance, left & 255, top & 255))
         data.extend(runs if use_runs else packed)
     if stats:
-        print(f'{name}: {len(index)//3} glyphs, {raw_size} -> {len(data)} data bytes, '
+        print(f'{name}: {len(index)//2} glyphs, {raw_size} -> {len(data)} data bytes, '
               f'{compressed} RLE glyphs')
     line_height = sum(font.getmetrics())
     return (f'var {name} = Font{{first:{first},last:{last},lineHeight:{line_height},\n'
-            f'characters:{quoted(characters.encode())},pixelTop:{pixel_top},pixelBottom:{pixel_bottom},\n'
+            f'pixelTop:{pixel_top},pixelBottom:{pixel_bottom},\n'
             f'index:{quoted(index)},\ndata:{quoted(data)},\n}}\n')
 
 
@@ -112,19 +114,10 @@ def main():
     result += '// DejaVu Sans coverage data; see LICENSE.txt for font attribution.\npackage uifont\n\n'
     for name, path, size, first, last in (
         ('Regular18', regular, 18, 32, 126),
-        ('Bold18', bold, 18, 32, 126),
-        ('Bold24', bold, 24, 32, 126),
-        ('Meridiem', regular, 14, 65, 80),
         ('Clock', bold, 60, 48, 58),
     ):
-        # Bold24 is reserved for these fixed titles, AM/PM, and numeric values.
-        # Regular18 retains all printable ASCII for arbitrary error messages.
-        characters = ""
-        if name == 'Bold24':
-            characters = ''.join(sorted(set(
-                '0123456789: .%AMPMTIMER DONEALARM'
-                'Keep this build?Install updateFirmware update')))
-        result += make_font(name, path, size, first, last, characters, args.stats) + '\n'
+        # Regular18 retains printable ASCII for all UI and general text.
+        result += make_font(name, path, size, first, last, args.stats) + '\n'
     args.output.write_text(result)
 
 

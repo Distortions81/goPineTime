@@ -93,7 +93,7 @@ func (u *watchUI) handleTimerTap(e inputEvent, now time.Time) {
 		a := &t.alarms[u.alarmIndex]
 		switch {
 		case inRect(e, 12, 128, 114, 172):
-			u.edit = clockEdit{hour: a.hour, minute: a.minute}
+			u.edit = clockEdit{hour: int(a.hour), minute: int(a.minute)}
 			u.editRepeat = a.repeat
 			u.page = pageAlarmEdit
 		case inRect(e, 126, 128, 228, 172):
@@ -113,7 +113,7 @@ func (u *watchUI) handleTimerTap(e inputEvent, now time.Time) {
 		case inRect(e, 12, 188, 114, 232):
 			u.page = pageAlarms
 		case inRect(e, 126, 188, 228, 232):
-			t.alarms[u.alarmIndex] = alarm{hour: u.edit.hour, minute: u.edit.minute, repeat: u.editRepeat, enabled: true}
+			t.alarms[u.alarmIndex] = alarm{hour: uint8(u.edit.hour), minute: uint8(u.edit.minute), repeat: u.editRepeat, enabled: true}
 			t.alarms[u.alarmIndex].schedule(u.clock.Now(now))
 			t.snooze[u.alarmIndex] = time.Time{}
 			t.pending &^= 1 << uint(u.alarmIndex)
@@ -182,14 +182,14 @@ func (u *watchUI) drawTimers(d canvas, now time.Time) {
 		drawApps(d)
 	case pageAlarms:
 		a := t.alarms[u.alarmIndex]
-		centered(d, &uifont.Bold18, 29, "ALARMS", white)
+		centered(d, &uifont.Regular18, 29, "ALARMS", white)
 		centered(d, &uifont.Regular18, 60, "ALARM "+decimal(u.alarmIndex+1)+" / "+decimal(alarmCount), muted)
-		stamp := time.Date(2000, 1, 1, a.hour, a.minute, 0, 0, time.UTC)
+		stamp := time.Date(2000, 1, 1, int(a.hour), int(a.minute), 0, 0, time.UTC)
 		label := u.timeLabel(stamp)
 		if !u.use24 {
 			label += " " + formatMeridiem(stamp)
 		}
-		centered(d, &uifont.Bold24, 94, label, white)
+		centered(d, &uifont.Regular18, 94, label, white)
 		if !u.clock.initialized {
 			centered(d, &uifont.Regular18, 116, "Set time & date first", warning)
 		} else {
@@ -206,15 +206,15 @@ func (u *watchUI) drawTimers(d canvas, now time.Time) {
 		clockControl(d, 12, 184, 102, 44, "PREV", card)
 		clockControl(d, 126, 184, 102, 44, "NEXT", card)
 	case pageAlarmRepeat:
-		centered(d, &uifont.Bold18, 29, "ALARM REPEAT", white)
+		centered(d, &uifont.Regular18, 29, "ALARM REPEAT", white)
 		centered(d, &uifont.Regular18, 62, "Tap to change", muted)
 		clockControl(d, 16, 80, 208, 48, repeatLabel(u.editRepeat), card)
 		centered(d, &uifont.Regular18, 157, "Save enables alarm", muted)
 		clockControl(d, 12, 188, 102, 44, "CANCEL", card)
 		clockControl(d, 126, 188, 102, 44, "SAVE", positive)
 	case pageStopwatch:
-		centered(d, &uifont.Bold18, 29, "STOPWATCH", white)
-		drawDuration(d, &uifont.Bold24, timerValueBaseline, t.watch.elapsed(now), true, "", white)
+		centered(d, &uifont.Regular18, 29, "STOPWATCH", white)
+		drawDuration(d, &uifont.Regular18, timerValueBaseline, t.watch.elapsed(now), true, "", white)
 		if t.watch.lap > 0 {
 			drawDuration(d, &uifont.Regular18, 140, t.watch.lap, true, "LAP ", muted)
 		}
@@ -227,10 +227,10 @@ func (u *watchUI) drawTimers(d canvas, now time.Time) {
 		clockControl(d, 12, 184, 102, 44, left, positive)
 		clockControl(d, 126, 184, 102, 44, right, card)
 	case pageCountdown:
-		centered(d, &uifont.Bold18, 29, "COUNTDOWN", white)
+		centered(d, &uifont.Regular18, 29, "COUNTDOWN", white)
 		// Round up so the display never says zero while time is still left.
 		left := t.countdown.left(now)
-		drawDuration(d, &uifont.Bold24, timerValueBaseline, (left+time.Second-1)/time.Second*time.Second, false, "", white)
+		drawDuration(d, &uifont.Regular18, timerValueBaseline, (left+time.Second-1)/time.Second*time.Second, false, "", white)
 		label := "SET DURATION"
 		if t.countdown.running {
 			label = "RUNNING"
@@ -245,14 +245,14 @@ func (u *watchUI) drawTimers(d canvas, now time.Time) {
 		clockControl(d, 12, 184, 102, 44, label, positive)
 		clockControl(d, 126, 184, 102, 44, "RESET", card)
 	case pageCountdownEdit:
-		centered(d, &uifont.Bold18, 29, "SET COUNTDOWN", white)
+		centered(d, &uifont.Regular18, 29, "SET COUNTDOWN", white)
 		for i, v := range []int{u.edit.hour, u.edit.minute, u.edit.day} {
 			x := int16(16 + i*72)
 			clockControl(d, x, 48, 64, 44, "+", card)
 			clockControl(d, x, 136, 64, 44, "-", card)
 			label := twoDigits(v)
-			w, _ := lineWidth(&uifont.Bold24, label)
-			writeLine(d, &uifont.Bold24, x+(64-int16(w))/2, 114, label, white)
+			w, _ := lineWidth(&uifont.Regular18, label)
+			writeLine(d, &uifont.Regular18, x+(64-int16(w))/2, 114, label, white)
 			label = []string{"HR", "MIN", "SEC"}[i]
 			w, _ = lineWidth(&uifont.Regular18, label)
 			writeLine(d, &uifont.Regular18, x+(64-int16(w))/2, 132, label, muted)
@@ -268,8 +268,8 @@ func (u *watchUI) drawTimers(d canvas, now time.Time) {
 		if t.source < alarmCount {
 			label = "ALARM " + decimal(t.source+1)
 		}
-		centered(d, &uifont.Bold24, 80, label, accent)
-		centered(d, &uifont.Bold24, 120, u.timeLabel(u.clock.Now(now)), white)
+		centered(d, &uifont.Regular18, 80, label, accent)
+		centered(d, &uifont.Regular18, 120, u.timeLabel(u.clock.Now(now)), white)
 		if t.source < alarmCount {
 			clockControl(d, 16, 144, 208, 44, "SNOOZE 5 MIN", card)
 		}

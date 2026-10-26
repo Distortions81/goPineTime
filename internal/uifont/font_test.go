@@ -28,14 +28,14 @@ func (d *glyphCanvas) SetPixel(x, y int16, c color.RGBA) {
 }
 
 func TestFontTables(t *testing.T) {
-	for _, f := range []*Font{&Regular18, &Bold18, &Bold24, &Meridiem, &Clock} {
-		if len(f.index) != len(fontRunes(f))*3 || f.GetYAdvance() == 0 {
+	for _, f := range []*Font{&Regular18, &Clock} {
+		if len(f.index) != len(fontRunes(f))*2 || f.GetYAdvance() == 0 {
 			t.Fatal("invalid index or line height")
 		}
 		next := 0
 		for index, r := range fontRunes(f) {
-			i := index * 3
-			offset := int(f.index[i])<<16 | int(f.index[i+1])<<8 | int(f.index[i+2])
+			i := index * 2
+			offset := int(f.index[i])<<8 | int(f.index[i+1])
 			if offset != next {
 				t.Fatalf("non-contiguous glyph %c", r)
 			}
@@ -119,9 +119,6 @@ func TestOriginalCoveragePreserved(t *testing.T) {
 		want string
 	}{
 		{&Regular18, "69aaf1c5e626bae0b448279150d0c87898d3d652681415ae893fb4a6bb674f92"},
-		{&Bold18, "1fdd1fc10376b61e946bb8c97fa3a68491f517eb1903f052a1599aeef8941437"},
-		{&Bold24, "b7b2768e7be81f3afc7cb6ad96b39f1aa7c21ebd55ab7ce87ecc5ecd251e7cb4"},
-		{&Meridiem, "e132395049e042a0908ebdb84952262bfce524b6acbc95624370c6a9885830d2"},
 		{&Clock, "1e4917fe301ae8395b2644d1d167f64a287389ce2f7f1be7b2169f754cf94876"},
 	} {
 		h := sha256.New()
@@ -140,9 +137,6 @@ func TestOriginalCoveragePreserved(t *testing.T) {
 }
 
 func fontRunes(f *Font) []rune {
-	if f.characters != "" {
-		return []rune(f.characters)
-	}
 	var chars []rune
 	for r := f.first; r <= f.last; r++ {
 		chars = append(chars, r)
@@ -151,7 +145,7 @@ func fontRunes(f *Font) []rune {
 }
 
 func TestFastMetricsMatchTinyFont(t *testing.T) {
-	for _, f := range []*Font{&Regular18, &Bold18, &Bold24, &Meridiem, &Clock} {
+	for _, f := range []*Font{&Regular18, &Clock} {
 		for n := 0; n < 500; n++ {
 			data := make([]byte, n%41)
 			for i := range data {

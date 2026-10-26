@@ -2,10 +2,9 @@ package main
 
 import "github.com/Distortions81/goPine/internal/gfx"
 
-// Five columns per 7-pixel glyph, low bit at the top: %, then 0 through 9.
-// An immutable 55-byte string keeps this small status font in flash.
-const batteryGlyphs = "\x63\x13\x08\x64\x63" +
-	"\x3e\x51\x49\x45\x3e\x00\x42\x7f\x40\x00" +
+// Five columns per 7-pixel glyph, low bit at the top: 0 through 9.
+// An immutable 50-byte string keeps this small status font in flash.
+const batteryGlyphs = "\x3e\x51\x49\x45\x3e\x00\x42\x7f\x40\x00" +
 	"\x42\x61\x51\x49\x46\x21\x41\x45\x4b\x31" +
 	"\x18\x14\x12\x7f\x10\x27\x45\x45\x45\x39" +
 	"\x3c\x4a\x49\x49\x30\x01\x71\x09\x05\x03" +
@@ -22,12 +21,9 @@ func drawStatusBattery(d canvas, p powerStatus) {
 	c := powerColor(p)
 	resolved := gfx.ResolveColor(d, c)
 	percent, start := percentDigits(p.Percent)
-	x := int16(214 - ((4-start)*6 - 1))
-	for _, ch := range percent[start:] {
-		index := 0
-		if ch != '%' {
-			index = int(ch-'0'+1) * 5
-		}
+	x := int16(214 - ((3-start)*6 - 1))
+	for _, ch := range percent[start:3] {
+		index := int(ch-'0') * 5
 		for col := 0; col < 5; col++ {
 			bits := batteryGlyphs[index+col]
 			for row := 0; row < 7; row++ {
