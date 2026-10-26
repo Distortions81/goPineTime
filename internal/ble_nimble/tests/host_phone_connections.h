@@ -219,6 +219,7 @@ static void phone_connections(const uint8_t first_ltk[16]) {
     assert(!gopine_ble_busy() && gopine_bond_count()==2);
     service_changed_keys_unchanged(&first_our,&first_peer);
     service_changed_keys_unchanged(&second_our,&second_peer);
+    phone_connection_tuning(&first_our,&second_our);
     ota_two_saved_phones(&first_our,&second_our);
     service_changed_keys_unchanged(&first_our,&first_peer);
     service_changed_keys_unchanged(&second_our,&second_peer);

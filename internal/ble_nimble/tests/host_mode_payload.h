@@ -6,7 +6,7 @@ static void mode_payload_quiet(void) {
 }
 static void mode_payload_lifecycle(void) {
     // Numeric mailbox fields have the same layout on ARM and the native host.
-    assert(sizeof(phone_peers)==48 && sizeof(mode_payload)==984);
+    assert(sizeof(phone_peers)==64 && sizeof(mode_payload)==984);
     const uint8_t addresses[3][6]={{1,3,5,7,9,0xce},{2,4,6,8,10,0xce},{3,6,9,12,15,0xce}};
     uint16_t control,data,status,weather;
     assert(!ble_gatts_find_chr(&update_uuids[0].u,&update_uuids[1].u,NULL,&control));

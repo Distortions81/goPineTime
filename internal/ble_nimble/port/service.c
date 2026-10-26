@@ -24,6 +24,7 @@
 #include "battery_security.h"
 #include "device_info.h"
 #include "phone_time.h"
+#include "phone_tuning.h"
 #include "ancs.h"
 
 extern int ble_ll_hci_cmd_rx(uint8_t *, void *);
@@ -64,6 +65,7 @@ static union {
 struct phone_peer {
     uint16_t handle;
     uint32_t generation,security_retry_at,close_retry_at;
+    struct phone_tuning tuning;
     bool security_pending,music_subscribed,battery_subscribed,close_requested,terminating;
     bool battery_snapshot_pending,battery_snapshot_sent;
 };
@@ -91,6 +93,7 @@ static struct phone_peer *phone_peer_add(uint16_t handle) {
         if(peer->handle!=BLE_HS_CONN_HANDLE_NONE)continue;
         if(phone_window)memset(phone_data(peer),0,sizeof(*phone_data(peer)));
         memset(peer,0,sizeof(*peer));peer->handle=handle;
+        peer->tuning.at=ble_npl_time_get()+PHONE_TUNING_GRACE_MS;
         if(!++peer_generation)++peer_generation;
         peer->generation=peer_generation;
         if(phone_window)music_clear(&phone_data(peer)->music);
@@ -935,6 +938,7 @@ void gopine_ble_poll(void) {
             if(peer->handle==BLE_HS_CONN_HANDLE_NONE)continue;
             if(!progress)progress=gopine_sm_progress(peer->handle);
             gopine_ancs_poll(peer->handle,phone_link_ready(peer->handle));
+            if(!peer->close_requested)phone_tune(&peer->tuning,peer->handle,now);
         }
         // Publish one selected procedure per poll. Alternating two phases
         // would keep waking Go and fill the trace even when neither advanced.
@@ -1112,6 +1116,8 @@ static uint32_t phone_peers_delay(uint32_t now) {
             continue;
         }
         if(peer->battery_snapshot_pending)return 0;
+        uint32_t tuning_delay=phone_tuning_delay(&peer->tuning,peer->handle,now);
+        if(tuning_delay<delay)delay=tuning_delay;
         if(peer->security_pending) {
             int32_t left=(int32_t)(peer->security_retry_at-now);
             uint32_t due=left>0?(uint32_t)left:0;

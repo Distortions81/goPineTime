@@ -44,6 +44,7 @@ static bool crypto_peripheral_enabled;
 static void assert_stopped_idle(void);
 static uint16_t parameter_handle,parameter_values[4];
 static bool accept_parameter_request,hold_parameter_response;
+static uint8_t parameter_identifier;
 // Capture real outgoing client requests separately from the watch's server
 // responses. A fake iOS GATT server answers these without calling ANCS callbacks.
 struct client_request { uint8_t data[247]; unsigned size; uint16_t connection; };
@@ -213,7 +214,7 @@ static bool capture_parameter_request(const struct captured_pdu *pdu) {
     // calling the GAP callback or mutating the host connection directly.
     parameter_requests++;parameter_handle=pdu->connection;
     for(unsigned i=0;i<4;i++)parameter_values[i]=get_le16(pdu->data+12+2*i);
-    if(hold_parameter_response)return true;
+    if(hold_parameter_response){parameter_identifier=pdu->data[9];return true;}
     uint8_t response[14]={0};
     put_le16(response,pdu->connection|0x2000);put_le16(response+2,10);
     put_le16(response+4,6);put_le16(response+6,BLE_L2CAP_CID_SIG);
@@ -671,6 +672,7 @@ static void phone_feature_traffic(void) {
 #include "host_service_changed.h"
 #include "host_ota_connections.h"
 #include "host_update_pipeline.h"
+#include "host_phone_tuning.h"
 #include "host_phone_connections.h"
 // Follow the peer-initiated passkey sequence in InfiniTime's pinned NimBLE
 // ble_sm_test_util_peer_sc_good_once_no_init, using a dynamically calculated
