@@ -6,18 +6,20 @@ import "unicode/utf8"
 const (
 	MaxPacket   = 103 // Three-byte companion header and up to 100 text bytes.
 	Capacity    = 4
-	ApplePacket = 148 // ANCS record plus the connection's source slot.
+	ApplePacket = 155 // ANCS record, source slot and resolved peer identity.
 )
 
 type Message struct {
-	ID          uint32
-	Title       [40]byte
-	Body        [100]byte
-	Category    byte
-	Unread      bool
-	Apple       bool
-	AppleSource byte
-	RemoteID    uint32
+	ID               uint32
+	Title            [40]byte
+	Body             [100]byte
+	Category         byte
+	Unread           bool
+	Apple            bool
+	AppleSource      byte
+	RemoteID         uint32
+	ApplePeer        [7]byte
+	AppleFingerprint uint64
 }
 
 // ApplyApple handles bounded ANCS records from authenticated iPhone links.
@@ -29,28 +31,39 @@ func (b *Inbox) ApplyApple(packet []byte) (changed, buzz bool) {
 	if packet[4] == 3 {
 		for i := b.Count - 1; i >= 0; i-- {
 			if b.At(i).Apple && b.At(i).AppleSource == packet[147] {
-				b.Dismiss(b.At(i).ID)
+				b.remove(i)
 				changed = true
 			}
 		}
 		return changed, false
 	}
 	uid := uint32(packet[0]) | uint32(packet[1])<<8 | uint32(packet[2])<<16 | uint32(packet[3])<<24
+	var peer [7]byte
+	copy(peer[:], packet[148:155])
 	existing := -1
 	for i := 0; i < b.Count; i++ {
-		if b.At(i).Apple && b.At(i).AppleSource == packet[147] && b.At(i).RemoteID == uid {
+		if b.At(i).Apple && sameApplePeer(b.At(i).ApplePeer, b.At(i).AppleSource, peer, packet[147]) && b.At(i).RemoteID == uid {
 			existing = i
 			break
 		}
 	}
 	if packet[4] == 2 {
+		b.forgetDismissed(peer, packet[147], uid)
 		if existing >= 0 {
-			b.Dismiss(b.At(existing).ID)
+			b.remove(existing)
 			return true, false
 		}
 		return false, false
 	}
 	if !hasText(packet[7:47]) && !hasText(packet[47:147]) {
+		return false, false
+	}
+	fingerprint := appleFingerprint(packet)
+	if b.wasDismissed(peer, packet[147], uid, fingerprint) {
+		return false, false
+	}
+	if b.clearedAll && packet[6]&4 != 0 {
+		b.rememberDismissed(peer, packet[147], uid, fingerprint)
 		return false, false
 	}
 	var m *Message
@@ -61,6 +74,7 @@ func (b *Inbox) ApplyApple(packet []byte) (changed, buzz bool) {
 		m = b.insert()
 	}
 	m.Apple, m.AppleSource, m.RemoteID, m.Category = true, packet[147], uid, appleCategory(packet[5])
+	m.ApplePeer, m.AppleFingerprint = peer, fingerprint
 	clean(m.Title[:], packet[7:47])
 	clean(m.Body[:], packet[47:147])
 
@@ -86,10 +100,13 @@ func appleCategory(category byte) byte {
 }
 
 type Inbox struct {
-	messages [Capacity]Message // Stable slots, recycled on dismissal or eviction.
-	order    [Capacity]uint8   // Newest first; only indices move.
-	Count    int
-	Revision uint32
+	messages      [Capacity]Message // Stable slots, recycled on dismissal or eviction.
+	order         [Capacity]uint8   // Newest first; only indices move.
+	Count         int
+	Revision      uint32
+	dismissed     [DismissedCapacity]dismissedApple
+	dismissedNext uint8
+	clearedAll    bool
 }
 
 // Add accepts InfiniTime's three-byte header, then either plain text or
@@ -253,19 +270,28 @@ func (b *Inbox) Dismiss(id uint32) {
 		if b.At(i).ID != id {
 			continue
 		}
-		*b.At(i) = Message{}
-		copy(b.order[i:], b.order[i+1:b.Count])
-		b.Count--
-		b.order[b.Count] = 0
-		b.Revision++
+		m := b.At(i)
+		if m.Apple {
+			b.rememberDismissed(m.ApplePeer, m.AppleSource, m.RemoteID, m.AppleFingerprint)
+		}
+		b.remove(i)
 		return
 	}
 }
+
+// Remote removals/session resets do not create user-dismissal records.
+func (b *Inbox) remove(i int) {
+	*b.At(i) = Message{}
+	copy(b.order[i:], b.order[i+1:b.Count])
+	b.Count--
+	b.order[b.Count] = 0
+	b.Revision++
+}
 func (b *Inbox) Clear() {
-	for i := range b.messages {
-		b.messages[i] = Message{}
+	for b.Count > 0 {
+		b.Dismiss(b.At(0).ID)
 	}
 	clear(b.order[:])
-	b.Count = 0
+	b.clearedAll = true
 	b.Revision++
 }

@@ -43,3 +43,30 @@ func TestAppleInboxBuzzAndSessionClearing(t *testing.T) {
 		t.Fatal("stale ANCS session data retained")
 	}
 }
+
+func TestClearAllFromInboxBlocksIPhoneReplayWithoutBuzz(t *testing.T) {
+	now := time.Unix(100, 0)
+	u := newWatchUI(firmwareConfirmed)
+	u.openInbox()
+	packet := func(uid uint32, event, flags, source byte) [notifications.ApplePacket]byte {
+		p := appleTestPacket(uid, event, flags)
+		p[147], p[148], p[149] = source, 1, 10
+		return p
+	}
+	r := &appleTestRadio{packets: [][notifications.ApplePacket]byte{packet(1, 0, 0, 1), packet(2, 0, 0, 1)}}
+	u.receiveAppleNotifications(r, now)
+	u.handle(inputEvent{Kind: inputTap, X: 180, Y: 58}, now, firmwareConfirmed, powerStatus{})
+	if u.notifications.inbox.Count != 0 || u.notificationVibrating(now) {
+		t.Fatal("clear all left messages or vibration")
+	}
+	r.packets = [][notifications.ApplePacket]byte{packet(0, 3, 0, 1), packet(1, 0, 4, 2), packet(2, 1, 0, 2)}
+	u.receiveAppleNotifications(r, now.Add(time.Minute))
+	if u.unreadNotifications() != 0 || u.notificationVibrating(now.Add(time.Minute)) {
+		t.Fatal("iPhone replay returned cleared messages or vibration")
+	}
+	r.packets = [][notifications.ApplePacket]byte{packet(3, 0, 0, 2)}
+	u.receiveAppleNotifications(r, now.Add(2*time.Minute))
+	if u.unreadNotifications() != 1 || !u.notificationVibrating(now.Add(2*time.Minute)) {
+		t.Fatal("new iPhone message was suppressed")
+	}
+}

@@ -16,7 +16,7 @@ const (
 // Minute buckets share timestamps but keep independent heart/step validity.
 // Only the most recent hour is rendered. No samples are written to flash.
 type healthHistory struct {
-	minutes    [64]int64
+	minutes    [64]uint32 // Minute stamps cover the watch's supported calendar.
 	heart      [64]uint8
 	steps      [64]uint32
 	stepsValid uint64
@@ -37,8 +37,8 @@ func (h *healthState) recordHealth(now time.Time, kind uint8, value uint32) {
 	minute := now.Unix() / 60
 	i := uint(minute) & 63
 	bit := uint64(1) << i
-	if history.minutes[i] != minute {
-		history.minutes[i] = minute
+	if history.minutes[i] != uint32(minute) {
+		history.minutes[i] = uint32(minute)
 		history.heart[i], history.steps[i] = 0, 0
 		history.stepsValid &^= bit
 	}
@@ -59,7 +59,7 @@ func (h *healthState) recordHealth(now time.Time, kind uint8, value uint32) {
 
 func (h *healthHistory) value(minute int64, kind uint8) (uint32, bool) {
 	i := uint(minute) & 63
-	if h.minutes[i] != minute {
+	if h.minutes[i] != uint32(minute) {
 		return 0, false
 	}
 	if kind == graphHeart {
@@ -103,7 +103,14 @@ func (u *watchUI) drawWatchGraphOptions(d canvas) {
 		label := graphLabel(option)
 		if u.watchGraph == option {
 			background = positive
-			label += ": Selected"
+			switch option {
+			case graphHeart:
+				label = "Heart rate: Selected"
+			case graphSteps:
+				label = "Steps: Selected"
+			default:
+				label = "Off: Selected"
+			}
 		}
 		clockControl(d, 12, int16(48+int(option)*48), 216, 42, label, background)
 	}
@@ -116,7 +123,12 @@ func (u *watchUI) watchGraphVisible() bool {
 }
 
 func drawGraphNumber(d canvas, x, y int16, value uint32) {
-	text := decimal(int(value))
+	if !controlVisible(d, y, 7, y+7) {
+		return
+	}
+	var buffer fixedDisplayText
+	buffer.number(value)
+	text := buffer.data[:buffer.n]
 	c := gfx.ResolveColor(d, muted)
 	for _, ch := range text {
 		if ch < '0' || ch > '9' {

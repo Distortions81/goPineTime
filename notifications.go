@@ -149,6 +149,7 @@ func (u *watchUI) handleNotifications(e inputEvent, state updateState) {
 		n.buzzUntil = time.Time{}
 	case inRect(e, 126, 42, 228, 74):
 		n.inbox.Clear()
+		n.selected, n.offset = 0, 0
 		n.buzzUntil = time.Time{}
 	default:
 		for i := 0; i < n.inbox.Count; i++ {
@@ -217,7 +218,7 @@ func (u *watchUI) drawNotifications(d canvas) {
 			label, c = "QUIET", positive
 		}
 		clockControl(d, 12, 42, 102, 32, label, c)
-		clockControl(d, 126, 42, 102, 32, "CLEAR", card)
+		clockControl(d, 126, 42, 102, 32, "CLEAR ALL", card)
 		if n.inbox.Count == 0 {
 			centered(d, &uifont.Regular18, 117, "No messages", white)
 			centered(d, &uifont.Regular18, 150, "Settings > Bluetooth", muted)

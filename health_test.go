@@ -85,11 +85,11 @@ func TestHealthModesPowerAndDeadlines(t *testing.T) {
 	if !d.heart || d.heartStarts != 2 {
 		t.Fatal("periodic window did not restart")
 	}
-	u.healthOptions = heartContinuous | stepsEnabled
+	u.healthOptions = withHeartInterval(heartPeriodic|stepsEnabled, 4)
 	u.tickHealth(now.Add(6*time.Minute), false)
 	u.tickHealth(now.Add(8*time.Minute), false)
-	if !d.heart {
-		t.Fatal("continuous mode stopped at periodic window")
+	if d.heart {
+		t.Fatal("scheduled measurement exceeded its window")
 	}
 	u.tickHealth(now.Add(9*time.Minute), true)
 	if d.heart || d.steps || !u.health.next.IsZero() {
@@ -129,14 +129,14 @@ func TestHealthStepSessionsAndFailureRecovery(t *testing.T) {
 	if h.stepsOn {
 		t.Fatal("shutdown did not recover")
 	}
-	h.tick(now.Add(33*time.Second), heartContinuous, false)
+	h.tick(now.Add(33*time.Second), heartPeriodic, false)
 	d.fail = true
-	h.tick(now.Add(34*time.Second), heartContinuous, false)
+	h.tick(now.Add(34*time.Second), heartPeriodic, false)
 	if !h.heartFailed {
 		t.Fatal("sampling failure was ignored")
 	}
 	d.fail = false
-	h.tick(now.Add(35*time.Second), heartContinuous, false)
+	h.tick(now.Add(35*time.Second), heartPeriodic, false)
 	if h.heartOn {
 		t.Fatal("failed heart sensor did not power down on retry")
 	}
@@ -151,7 +151,7 @@ func TestHealthUIControlsAndFrameInvalidation(t *testing.T) {
 	if u.healthOptions&3 != heartPeriodic || key == u.frameKey(now, powerStatus{}) {
 		t.Fatal("mode control did not select periodic/redraw")
 	}
-	for _, want := range []time.Duration{15 * time.Minute, 30 * time.Minute, 5 * time.Minute} {
+	for _, want := range []time.Duration{15 * time.Minute, 30 * time.Minute, time.Hour, 3 * time.Hour, time.Minute, 5 * time.Minute} {
 		u.handleHealth(inputEvent{Kind: inputTap, X: 120, Y: 95})
 		if heartInterval(u.healthOptions) != want {
 			t.Fatal("wrong periodic interval")
@@ -163,18 +163,19 @@ func TestHealthUIControlsAndFrameInvalidation(t *testing.T) {
 	}
 	u.handleHealth(inputEvent{Kind: inputTap, X: 120, Y: 65})
 	u.handleHealth(inputEvent{Kind: inputTap, X: 120, Y: 95})
-	if u.healthOptions&3 != heartContinuous || heartInterval(u.healthOptions) != 5*time.Minute {
-		t.Fatal("disabled interval changed in continuous mode")
+	if u.healthOptions&1 != heartOff || heartInterval(u.healthOptions) != 5*time.Minute {
+		t.Fatal("disabled interval changed while Off")
 	}
+	u.handleHealth(inputEvent{Kind: inputTap, X: 120, Y: 65})
 	u.handleHealth(inputEvent{Kind: inputSleep})
-	if u.healthOptions&3 != heartContinuous {
+	if u.healthOptions&1 != heartPeriodic {
 		t.Fatal("screen sleep cancelled tracking")
 	}
 	u.handleHealth(inputEvent{Kind: inputSwipeRight})
 	if u.page != pageApps {
 		t.Fatal("back did not return to Apps")
 	}
-	for _, label := range []string{"Heart rate: Continuous", "Heart sensor error", "Step sensor error", "Paused for update", "Steps: 99999 since boot"} {
+	for _, label := range []string{"Heart rate: Periodic", "Heart sensor error", "Step sensor error", "Paused for update", "Steps: 99999 since boot"} {
 		w, _ := lineWidth(&uifont.Regular18, label)
 		if w > 216 {
 			t.Fatal("health text does not fit", label, w)

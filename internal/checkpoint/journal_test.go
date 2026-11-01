@@ -313,11 +313,11 @@ func TestDisplayRecordCompatibility(t *testing.T) {
 }
 
 func TestActivitySettingsCompatibility(t *testing.T) {
-	for mode := uint8(0); mode < 3; mode++ {
-		for interval := uint8(0); interval < 3; interval++ {
+	for mode := uint8(0); mode < 2; mode++ {
+		for interval := uint8(0); interval < 6; interval++ {
 			for _, steps := range []uint8{0, 16} {
 				s := sampleSettings()
-				options := mode | interval<<2 | steps
+				options := mode | (interval&3)<<2 | (interval>>2)<<1 | steps
 				s.SetActivity(options)
 				s.SetDisplay(true, 2)
 				b := encode(Record{HasSettings: true, Settings: s})
@@ -326,6 +326,32 @@ func TestActivitySettingsCompatibility(t *testing.T) {
 					t.Fatal("activity/display settings did not round trip", options)
 				}
 			}
+		}
+	}
+}
+
+func TestLegacyHeartModesMigrateToScheduledTracking(t *testing.T) {
+	for interval := uint8(0); interval < 3; interval++ {
+		for mode := uint8(0); mode < 3; mode++ {
+			s := sampleSettings()
+			s.Display = (s.Display & 7) | (mode|interval<<2|16)<<3
+			b := encode(Record{HasSettings: true, Settings: s})
+			r, ok := decode(&b)
+			want := mode | interval<<2 | 16
+			if mode == 2 {
+				want = 1 | interval<<2 | 16
+			}
+			if !ok || r.Settings.Activity() != want {
+				t.Fatal("legacy activity migration", mode, interval, ok, r.Settings.Activity())
+			}
+		}
+	}
+	for _, index := range []uint8{6, 7} {
+		s := sampleSettings()
+		s.SetActivity(1 | (index&3)<<2 | (index>>2)<<1)
+		b := encode(Record{HasSettings: true, Settings: s})
+		if _, ok := decode(&b); ok {
+			t.Fatal("invalid scheduled interval accepted", index)
 		}
 	}
 }

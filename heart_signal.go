@@ -1,6 +1,7 @@
 package main
 
 import (
+	"image/color"
 	"time"
 
 	"github.com/Distortions81/goPine/internal/gfx"
@@ -52,6 +53,19 @@ func hexByte(value byte) string {
 	return string(text[:])
 }
 
+func drawNumberPair(d canvas, y int16, prefix string, a uint32, separator string, b uint32, suffix string, c color.RGBA) {
+	if !textVisible(d, &uifont.Regular18, y, "") {
+		return
+	}
+	var text fixedDisplayText
+	text.add(prefix)
+	text.number(a)
+	text.add(separator)
+	text.number(b)
+	text.add(suffix)
+	centered(d, &uifont.Regular18, y, string(text.data[:text.n]), c)
+}
+
 func (u *watchUI) drawHeartSignal(d canvas) {
 	centered(d, &uifont.Regular18, 29, "HEART SIGNAL", white)
 	if u.health == nil || u.health.signal.samples == 0 {
@@ -62,7 +76,7 @@ func (u *watchUI) drawHeartSignal(d canvas) {
 		}
 	} else {
 		s := &u.health.signal
-		centered(d, &uifont.Regular18, 60, "ADC "+decimal(int(s.latest))+" ALS "+decimal(int(s.ambient)), white)
+		drawNumberPair(d, 60, "ADC ", uint32(s.latest), " ALS ", s.ambient, "", white)
 		const left, right, top, bottom int16 = 16, 224, 82, 132
 		if controlVisible(d, top, bottom-top, bottom) {
 			gfx.Line(d, left, bottom, right, bottom, card)
@@ -82,9 +96,9 @@ func (u *watchUI) drawHeartSignal(d canvas) {
 				px, py = x, y
 			}
 		}
-		centered(d, &uifont.Regular18, 158, "Range "+decimal(int(s.minimum))+"-"+decimal(int(s.maximum)), muted)
-		centered(d, &uifont.Regular18, 182, "Samples "+decimal(int(s.samples))+" Good "+decimal(int(s.accepted)), white)
-		centered(d, &uifont.Regular18, 206, "Gap "+decimal(int(s.maxGapMS))+"ms / "+decimal(int(s.gaps)), muted)
+		drawNumberPair(d, 158, "Range ", uint32(s.minimum), "-", uint32(s.maximum), "", muted)
+		drawNumberPair(d, 182, "Samples ", s.samples, " Good ", s.accepted, "", white)
+		drawNumberPair(d, 206, "Gap ", s.maxGapMS, "ms / ", s.gaps, "", muted)
 	}
 	if u.health != nil {
 		if source, ok := u.health.device.(interface{ HeartConfig() heartSensorConfig }); ok {

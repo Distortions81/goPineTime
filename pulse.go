@@ -66,22 +66,30 @@ func (p *pulseDetector) estimate() uint16 {
 		shift++
 	}
 	var scores [17]int32
+	var values [64]int16
+	var sx, xx int32
+	for i := range values {
+		values[i] = p.values[(int(p.head)+i)&63] >> shift
+		if i < 48 {
+			x := int32(values[i])
+			sx += x
+			xx += x * x
+		}
+	}
 	// All lags use the same overlap; subtract each segment's mean so slow
 	// baseline movement cannot count as periodic optical energy.
 	const overlap = 48
 	for lag := 2; lag <= 16; lag++ {
-		var sx, sy, xx, yy, xy int64
+		var sy, yy, xy int32
 		for i := 0; i < overlap; i++ {
-			x := int64(p.values[(int(p.head)+i)&63] >> shift)
-			y := int64(p.values[(int(p.head)+i+lag)&63] >> shift)
-			sx += x
+			x := int32(values[i])
+			y := int32(values[i+lag])
 			sy += y
-			xx += x * x
 			yy += y * y
 			xy += x * y
 		}
-		covariance := overlap*xy - sx*sy
-		energy := max(overlap*xx-sx*sx, overlap*yy-sy*sy)
+		covariance := overlap*int64(xy) - int64(sx)*int64(sy)
+		energy := max(overlap*int64(xx)-int64(sx)*int64(sx), overlap*int64(yy)-int64(sy)*int64(sy))
 		if energy > 0 {
 			scores[lag] = int32(covariance * 1024 / energy)
 		}

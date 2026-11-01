@@ -15,6 +15,10 @@ static ble_gatt_dsc_fn *descriptor_callback;
 static ble_gatt_attr_fn *write_callback;
 static void *callback_arg;
 static bool want_gatt;
+int ble_gap_conn_find(uint16_t conn,struct ble_gap_conn_desc *desc) {
+    memset(desc,0,sizeof(*desc));desc->peer_id_addr.type=1;
+    desc->peer_id_addr.val[0]=(uint8_t)conn;return 0;
+}
 static int start_result(void) { int rc=start_error;start_error=0;return rc; }
 uint32_t ble_npl_time_get(void) { return now; }
 int ble_gattc_disc_svc_by_uuid(uint16_t conn,const ble_uuid_t *uuid,ble_gatt_disc_svc_fn *cb,void *arg) {
@@ -102,6 +106,7 @@ static void transfer_and_session(void) {
     write_result(0);response(0x12345678);
     uint8_t out[ANCS_PACKET_SIZE];assert(gopine_ancs_take(out,true)==ANCS_PACKET_SIZE);
     assert(ancs_u32(out)==0x12345678 && out[4]==0 && out[5]==4 && out[6]==4);
+    assert(out[148]==1 && out[149]==test_conn && !out[150]);
     assert(!memcmp(out+7,"App",3) && !memcmp(out+47,"Hello",5));
     source(12,0,0);gopine_ancs_poll(test_conn,true);write_result(0);
     source(12,2,0);response(12);assert(gopine_ancs_take(out,true) && out[4]==2);

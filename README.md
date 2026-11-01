@@ -21,23 +21,32 @@ use an SWD debugger for the first install, then update over Bluetooth.
 
 - 12/24-hour clock, five alarms with snooze, stopwatch with laps, and countdown timer.
 - Battery and charging display; light/dark themes, brightness, rotation, and tap to wake.
-- Muted clock-face hints show the Apps (swipe right) and Settings (swipe left) menus.
+- Muted clock-face hints open Apps and Settings by either tapping or swiping.
 - Persistent settings, alarms, and timer state.
 - Optional Bluetooth time sync, notifications, and music controls; two saved devices.
 - In-app Bluetooth firmware updates with on-watch confirmation and rollback.
-- Health options: off, periodic (5/15/30 minutes), or continuous heart-rate tracking,
+- Health options: off or periodic heart-rate tracking (1/5/15/30 minutes, 1/3 hours),
   plus an independent hardware pedometer toggle. Both default to off.
 
 Phone features depend on the companion app and permissions. InfiniLink music
 controls target Apple Music; notification dismissal is local to the watch.
+Inbox **Clear All** removes every visible message and suppresses the iPhone's
+pre-existing replay backlog. A bounded RAM history remembers the last 32 locally
+dismissed iPhone notifications across Bluetooth reconnects; new notification IDs
+or changed content can appear normally. This history resets when the watch reboots.
 Health replaces the disabled Weather card in Apps. Tap the heart-rate row to
-cycle modes; periodic mode samples for 30 seconds per interval, including while
+cycle modes; periodic mode samples until a valid reading or a 30-second timeout per interval, including while
 the screen sleeps. The last estimated BPM, its age, and steps since boot appear below the
 controls. Steps accumulate across toggles, but reset on reboot; they are not a
 daily history. Tracking choices are saved alongside the other settings. Sensor
 faults stop tracking until its option is toggled off and on; firmware updates
 temporarily suspend both sensors. Off mode keeps the previous sensor shutdown
 behavior. The heart-rate estimator is experimental and needs on-watch validation.
+Continuous mode has been removed. Older saved Continuous settings migrate to
+periodic tracking, preserving the previously selected interval (5 minutes by default).
+Heart-rate tracking and the pedometer pause whenever external power is connected,
+including after the battery is full. Both resume their saved settings on unplug;
+step totals are retained and a fresh scheduled heart-rate attempt can run.
 
 The fourth Health button opens **Watch face graph**, with **Off**, **Heart rate**,
 and **Steps** choices. The clock can show the last hour of BPM readings or bars

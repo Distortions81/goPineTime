@@ -63,36 +63,37 @@ const (
 const updateHoldDuration = 3 * time.Second
 
 type watchUI struct {
-	page          page
-	expires       time.Time
-	message       string
-	use24         bool
-	touchWake     bool
-	flipScreen    bool
-	lightMode     bool
-	brightness    uint8
-	batteryChoice batteryChoice
-	phoneAuto     bool
-	holding       bool
-	holdSince     time.Time
-	holdStep      int
-	clock         watchClock
-	edit          clockEdit
-	sync          timesync.Session
-	syncStatus    string
-	timers        timerState
-	alarmIndex    int
-	editRepeat    alarmRepeat
-	settingsNote  string
-	weather       *weatherState
-	phone         *phoneState
-	notifications *notificationState
-	transfer      *transferState
-	powerNotice   bool
-	pairing       *pairingState
-	healthOptions uint8
-	watchGraph    uint8
-	health        *healthState
+	page           page
+	expires        time.Time
+	message        string
+	use24          bool
+	touchWake      bool
+	flipScreen     bool
+	lightMode      bool
+	brightness     uint8
+	batteryChoice  batteryChoice
+	phoneAuto      bool
+	holding        bool
+	holdSince      time.Time
+	holdStep       int
+	clock          watchClock
+	edit           clockEdit
+	sync           timesync.Session
+	syncStatus     string
+	timers         timerState
+	alarmIndex     int
+	editRepeat     alarmRepeat
+	settingsNote   string
+	weather        *weatherState
+	phone          *phoneState
+	notifications  *notificationState
+	transfer       *transferState
+	powerNotice    bool
+	pairing        *pairingState
+	healthOptions  uint8
+	healthCharging bool
+	watchGraph     uint8
+	health         *healthState
 }
 
 func newWatchUI(state updateState) watchUI {
@@ -286,6 +287,14 @@ func (u *watchUI) handle(e inputEvent, now time.Time, state updateState, power p
 		return actionNone
 	}
 	switch u.page {
+	case pageClock:
+		if state != firmwareTrial {
+			if inRect(e, 12, 42, 114, 76) {
+				u.page = pageApps
+			} else if inRect(e, 126, 42, 228, 76) {
+				u.page = pageSettings
+			}
+		}
 	case pageTimeSettings, pageSetTime, pageSetDate, pageAlarmEdit:
 		u.handleClockTap(e, now)
 	case pageApps, pageAlarms, pageAlarmRepeat, pageStopwatch, pageCountdown, pageCountdownEdit:

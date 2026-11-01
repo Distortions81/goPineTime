@@ -77,6 +77,11 @@ def recycling_allocations(text):
             and re.search(r"internal/(?:ota/(?:receiver|image)|notifications/notifications)\.go:", line)]
 
 
+def health_hot_allocations(text):
+    return [line for line in text.splitlines() if "object allocated on the heap" in line
+            and re.search(r"/(?:health|health_graph|heart_signal|pulse|format)\.go:", line)]
+
+
 def runtime_rng_calls(text):
     """Keep TinyGo's polling RNG separate from NimBLE's interrupt-driven RNG.
 
@@ -210,14 +215,14 @@ def audit(symbols, by_address, task_stack, c_frames=None):
         "health_tracking": live + frame("(*main.watchUI).tickHealth", False) + frame("(*main.healthState).tick", False) + max(frame("(*main.boardHealthDevice).SetSteps", False), frame("(*main.boardHealthDevice).SetHeart", False), frame("(*main.pulseDetector).sample", False) + frame("(*main.pulseDetector).estimate", False)) + frame("main.pauseRadioController", False),
         "settings_save": live + callback + frame("(*main.timeSyncController).saveSettings", False) + frame("(*main.settingsPersistence).update", False) + sizes[FLUSH] + max(sizes[SAVE], snapshot + calendar),
         "input": live + frame("(*main.watchUI).handle", False) + callback,
-        "frame_change": live + frame("main.changedStrips", False),
+        "frame_change": live + frame("(*main.watchLoop).paintFrame", False) + frame("main.changedStrips", False),
         "phone_update": live + frame("(*main.timeSyncController).update", False) + frame("(*main.timeSyncController).updatePhone", False) + max(frame("(main.pineTimeRadio).TakeMusic", False), frame("(main.pineTimeRadio).TakeWeather", False)),
         "bluetooth_host": live + frame("(*main.timeSyncController).update", False) + frame("(main.pineTimeRadio).Service", False),
         "apple_notification_update": live + frame("(*main.watchUI).receiveAppleNotifications", False) + max(frame("(main.pineTimeRadio).TakeAppleNotification", False), frame("(*github.com/Distortions81/goPine/internal/notifications.Inbox).ApplyApple", False)),
         "notification_update": live + frame("(*main.timeSyncController).update", False) + frame("(*main.timeSyncController).updatePhone", False) + frame("(*main.watchUI).receiveNotifications", False) + max(frame("(main.pineTimeRadio).TakeNotification", False), frame("(*github.com/Distortions81/goPine/internal/notifications.Inbox).Add", False)),
         "weather_update": live + frame("(*main.timeSyncController).update", False) + frame("(*main.timeSyncController).updateWeather", False) + frame("(main.pineTimeRadio).TakeWeather", False),
         "pairing_update": live + frame("(*main.timeSyncController).updatePairing", False) + frame("(main.pineTimeRadio).ForgetPhone", False),
-        "render": live + frame("(*main.frameRenderer).renderStrips", False) + frame("(*main.watchLoop).run$1", False),
+        "render": live + frame("(*main.watchLoop).paintFrame", False) + frame("(*main.frameRenderer).renderStrips", False) + frame("(*main.watchLoop).run$1", False),
     }
     phone = live + frame("(*main.timeSyncController).update", False) + frame("(*main.timeSyncController).updatePhone", False)
     paths["phone_preflight_save"] = live + callback + sizes[FLUSH] + max(sizes[SAVE], snapshot + calendar)
@@ -312,6 +317,8 @@ def main():
     if args.allocations:
         result["recycling_allocations"] = recycling_allocations(args.allocations.read_text())
         result["errors"].extend("Recycling path allocates: " + line for line in result["recycling_allocations"])
+        result["health_hot_allocations"] = health_hot_allocations(args.allocations.read_text())
+        result["errors"].extend("Health hot path allocates: " + line for line in result["health_hot_allocations"])
     if args.report:
         args.report.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))

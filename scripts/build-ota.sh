@@ -71,7 +71,7 @@ if $bootstrap; then
 fi
 allocation_args=()
 if [[ $target == *-ble.json ]]; then
-  allocation_args=(-print-allocs='(ota.*Receiver|ota.ValidateWithScratch|notifications.*Inbox)')
+  allocation_args=(-print-allocs='(ota.*Receiver|ota.ValidateWithScratch|notifications.*Inbox|main.*(drawHealth|drawNumberPair|drawHeartSignal|drawWatchGraph|fixedDisplayText)|pulseDetector)')
 fi
 if ! "$tinygo_bin" build -target="$target" "${allocation_args[@]}" \
   -ldflags="-X main.firmwareTime=$firmware_time -X main.firmwareDate=$firmware_date -X main.firmwareVersion=$version" \

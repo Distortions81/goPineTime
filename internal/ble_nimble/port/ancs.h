@@ -3,8 +3,9 @@
 #include "host/ble_hs.h"
 #include "ancs_mailbox.h"
 
-// Internal output appends a source slot to the 147-byte ANCS record.
-#define ANCS_PACKET_SIZE (ANCS_RECORD_SIZE+1)
+// Internal output appends source slot and resolved peer identity (type + MAC).
+// Identity survives reconnects even when connection slots/private addresses change.
+#define ANCS_PACKET_SIZE (ANCS_RECORD_SIZE+8)
 void gopine_ancs_reset(void);
 void gopine_ancs_reset_peer(uint16_t conn);
 void gopine_ancs_poll(uint16_t conn, bool trusted);

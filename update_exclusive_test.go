@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/Distortions81/goPine/internal/notifications"
 	"testing"
 	"time"
 )
@@ -10,9 +11,9 @@ type quietUpdateRadio struct {
 	appleReads, pairingReads int
 }
 
-func (r *quietUpdateRadio) TakeAppleNotification() ([148]byte, int) {
+func (r *quietUpdateRadio) TakeAppleNotification() ([notifications.ApplePacket]byte, int) {
 	r.appleReads++
-	return [148]byte{}, 0
+	return [notifications.ApplePacket]byte{}, 0
 }
 func (r *quietUpdateRadio) PairingCode() uint32 { r.pairingReads++; return 0 }
 func (*quietUpdateRadio) BondStatus() int       { return 2 }

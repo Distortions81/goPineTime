@@ -43,7 +43,7 @@ func TestMixedPeerRecyclingHasNoAllocationsOrStaleText(t *testing.T) {
 	clearFirst := applePacket(0, 3, 0, "", "")
 	android := wire("Android")
 	if got := testing.AllocsPerRun(1000, func() {
-		b.Clear()
+		b = Inbox{} // A fresh boot, including dismissal history, for each run.
 		b.Add(android)
 		b.ApplyApple(a)
 		id := b.At(0).ID

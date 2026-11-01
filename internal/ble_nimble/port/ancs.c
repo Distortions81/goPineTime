@@ -1,6 +1,7 @@
 // iOS ANCS consumer, separate from the watch's ANS server. All procedures run
 // cooperatively after the host callback unwinds; callbacks only advance state.
 #include "ancs.h"
+#include "host/ble_gap.h"
 
 static const ble_uuid128_t service_uuid=BLE_UUID128_INIT(0xd0,0x00,0x2d,0x12,0x1e,0x4b,0x0f,0xa4,0x99,0x4e,0xce,0xb5,0x31,0xf4,0x05,0x79);
 static const ble_uuid128_t source_uuid=BLE_UUID128_INIT(0xbd,0x1d,0xa2,0x99,0xe6,0x25,0x58,0x8c,0xd9,0x42,0x01,0x63,0x0d,0x12,0xbf,0x9f);
@@ -259,6 +260,12 @@ int gopine_ancs_take(uint8_t *out,bool allowed) {
             // Slot-local source IDs keep identical iPhone UIDs independent.
             // Reusing a slot always publishes its clear before new records.
             out[ANCS_RECORD_SIZE]=(uint8_t)(index+1);take_cursor=(index+1)%2;
+            memset(out+ANCS_RECORD_SIZE+1,0,7);
+            struct ble_gap_conn_desc desc;
+            if(client->conn!=BLE_HS_CONN_HANDLE_NONE && !ble_gap_conn_find(client->conn,&desc)) {
+                out[ANCS_RECORD_SIZE+1]=desc.peer_id_addr.type&1; // Normalize resolved identity address types.
+                memcpy(out+ANCS_RECORD_SIZE+2,desc.peer_id_addr.val,6);
+            }
             return ANCS_PACKET_SIZE;
         }
     }

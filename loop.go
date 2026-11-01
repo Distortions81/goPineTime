@@ -56,6 +56,7 @@ func (l *watchLoop) run() error {
 			l.updater.tick(l.ui, now, power)
 		}
 		exclusive := l.ui.updateExclusive() || l.sync.directMode
+		l.ui.healthCharging = power.State != chargeDischarging
 		l.ui.tickHealth(now, exclusive)
 		if !exclusive && l.beforeSync != nil {
 			l.beforeSync(now)
@@ -99,17 +100,9 @@ func (l *watchLoop) run() error {
 				painted = false
 				l.renderer.invalidate()
 			}
-			key := l.ui.frameKey(now, power)
-			if !painted || key != previous {
-				frameTime = now
-				mask := allStrips
-				if painted {
-					mask = changedStrips(&previous, &key)
-				}
-				if err := l.renderer.renderStrips(l.display, drawFrame, mask); err != nil {
-					return wrapError("refresh display", err)
-				}
-				previous, painted = key, true
+			frameTime = now
+			if err := l.paintFrame(now, power, &previous, &painted, drawFrame); err != nil {
+				return wrapError("refresh display", err)
 			}
 		}
 		event, err := l.display.Wait(max(wakeAt.Sub(l.now()), minimumLoopWait))
@@ -156,4 +149,24 @@ func (l *watchLoop) run() error {
 			painted = false
 		}
 	}
+}
+
+// Keep transient frame-key copies off the loop's permanent stack frame while
+// settings saves, radio work and sensor processing run.
+//
+//go:noinline
+func (l *watchLoop) paintFrame(now time.Time, power powerStatus, previous *frameKey, painted *bool, draw func(canvas)) error {
+	key := l.ui.frameKey(now, power)
+	if *painted && key == *previous {
+		return nil
+	}
+	mask := allStrips
+	if *painted {
+		mask = changedStrips(previous, &key)
+	}
+	if err := l.renderer.renderStrips(l.display, draw, mask); err != nil {
+		return err
+	}
+	*previous, *painted = key, true
+	return nil
 }

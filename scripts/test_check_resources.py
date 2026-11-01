@@ -9,6 +9,14 @@ spec.loader.exec_module(resources)
 
 
 class ResourceChecks(unittest.TestCase):
+    def test_health_hot_allocation_guard(self):
+        text = '\n'.join([
+            '/repo/health.go:100: object allocated on the heap: escapes',
+            '/repo/format.go:20: object allocated on the heap: escapes',
+            '/repo/main.go:40: object allocated on the heap: initialization',
+        ])
+        self.assertEqual(len(resources.health_hot_allocations(text)), 2)
+
     def test_runtime_rng_ownership_tracks_real_callers(self):
         startup = '''00024bc8 <Reset_Handler>:
    24bfa: f7ff fa9d    bl 0x24138 <machine.GetRNG>

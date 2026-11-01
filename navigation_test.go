@@ -47,9 +47,9 @@ func TestSharedBackButtonOverlayAndTrackingCleanup(t *testing.T) {
 	now := time.Unix(100, 0)
 	u := newWatchUI(firmwareConfirmed)
 	u.openHealth()
-	u.healthOptions = heartContinuous | stepsEnabled
+	u.healthOptions = heartPeriodic | stepsEnabled
 	u.handle(inputEvent{Kind: inputTap, X: 25, Y: 24}, now, firmwareConfirmed, powerStatus{})
-	if u.page != pageApps || u.healthOptions != heartContinuous|stepsEnabled {
+	if u.page != pageApps || u.healthOptions != heartPeriodic|stepsEnabled {
 		t.Fatal("back cancelled background health tracking")
 	}
 	u.page = pagePhone

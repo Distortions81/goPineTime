@@ -7,6 +7,7 @@ import (
 	"time"
 
 	ble "github.com/Distortions81/goPine/internal/ble_nimble"
+	"github.com/Distortions81/goPine/internal/notifications"
 	"github.com/Distortions81/goPine/internal/timesync"
 	"github.com/Distortions81/goPine/internal/weather"
 )
@@ -65,9 +66,11 @@ func (pineTimeRadio) TakeMusic() ([87]byte, bool, error) {
 	}
 	return value, changed, err
 }
-func (pineTimeRadio) TakeNotification() ([103]byte, int)      { return ble.TakeNotification() }
-func (pineTimeRadio) TakeAppleNotification() ([148]byte, int) { return ble.TakeAppleNotification() }
-func (pineTimeRadio) UpdateBattery(value uint8)               { ble.UpdateBattery(value) }
+func (pineTimeRadio) TakeNotification() ([103]byte, int) { return ble.TakeNotification() }
+func (pineTimeRadio) TakeAppleNotification() ([notifications.ApplePacket]byte, int) {
+	return ble.TakeAppleNotification()
+}
+func (pineTimeRadio) UpdateBattery(value uint8) { ble.UpdateBattery(value) }
 func (pineTimeRadio) StartUpdate(battery uint8) error {
 	if rc := ble.StartUpdate(battery); rc != 0 {
 		return errors.New("update Bluetooth failed")

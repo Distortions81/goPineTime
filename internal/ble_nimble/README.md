@@ -9,6 +9,8 @@ NimBLE host/controller with a cooperative TinyGo port. See the root
 - Two simultaneous phone links with passkey pairing and two persistent bonds.
 - Standard Battery, Device Information, and Current Time services.
 - InfiniTime music controls, Simple Weather receiver, and ANS notifications.
+- ANCS delivery includes the resolved peer identity so Go can retain local
+  dismissals across address/connection-slot changes without mixing two phones.
 - ANCS client for iPhone notifications. Apple AMS and remote notification actions
   are not implemented. The radio remains a GAP peripheral.
 - Native goPine protocol-2 firmware update service

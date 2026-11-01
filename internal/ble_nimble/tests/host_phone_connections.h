@@ -98,6 +98,8 @@ static void phone_two_ancs(void) {
         if(out[4]==3)continue;
         assert(out[4]==0 && get_le32(out)==0x12345678 && out[7]>='T' && out[7]<='U');
         unsigned handle=out[7]-'S';phone_apple_sources[handle]=out[147];seen|=1u<<out[147];
+        struct ble_gap_conn_desc desc;assert(!ble_gap_conn_find(handle,&desc));
+        assert(out[148]==(desc.peer_id_addr.type&1) && !memcmp(out+149,desc.peer_id_addr.val,6));
     }
     assert(seen==6 && phone_apple_sources[1]!=phone_apple_sources[2]); // Identical Apple UIDs from two ATT servers remain distinct.
     apple_connection=1;apple_source(0x12345678,2);

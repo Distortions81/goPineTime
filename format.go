@@ -9,6 +9,28 @@ import (
 // reflection, floating-point formatting, and generic printer machinery.
 func decimal(v int) string { return strconv.Itoa(v) }
 
+// Fixed display text avoids strconv's slice-return escape in TinyGo. Both
+// methods only copy into caller-owned storage and never grow a slice.
+type fixedDisplayText struct {
+	data [32]byte
+	n    int
+}
+
+func (t *fixedDisplayText) add(s string) { t.n += copy(t.data[t.n:], s) }
+func (t *fixedDisplayText) number(value uint32) {
+	var digits [10]byte
+	i := len(digits)
+	for {
+		i--
+		digits[i] = byte('0' + value%10)
+		value /= 10
+		if value == 0 {
+			break
+		}
+	}
+	t.n += copy(t.data[t.n:], digits[i:])
+}
+
 func twoDigits(v int) string {
 	if v >= 0 && v < 100 {
 		const pairs = "00010203040506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899"

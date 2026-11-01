@@ -39,6 +39,8 @@ int gopine_ble_forget_phone(void);
 */
 import "C"
 
+import "github.com/Distortions81/goPine/internal/notifications"
+
 // SetFirmwareVersion copies the build's version into the public Device
 // Information service before the radio starts. C retains no Go pointer.
 func SetFirmwareVersion(value string) {
@@ -82,7 +84,7 @@ func TakeNotification() (value [103]byte, size int) {
 	size = int(C.gopine_ble_take_notification((*C.uint8_t)(&value[0])))
 	return
 }
-func TakeAppleNotification() (value [148]byte, size int) {
+func TakeAppleNotification() (value [notifications.ApplePacket]byte, size int) {
 	size = int(C.gopine_ble_take_apple_notification((*C.uint8_t)(&value[0])))
 	return
 }
