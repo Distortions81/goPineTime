@@ -28,6 +28,7 @@ func (u *watchUI) askBattery(choice batteryChoice) {
 func (u *watchUI) handleBatteryConfirm(e inputEvent, now time.Time) {
 	confirm := e.Kind == inputTap && inRect(e, 126, 188, 228, 232)
 	cancel := e.Kind == inputSleep || e.Kind == inputCancel || e.Kind == inputSwipeRight ||
+		backButtonTapped(e) ||
 		(e.Kind == inputTap && inRect(e, 12, 188, 114, 232))
 	if !confirm && !cancel {
 		return

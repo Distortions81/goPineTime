@@ -60,5 +60,8 @@ func (u *watchUI) drawFrame(d canvas, now time.Time, p powerStatus) {
 			centered(d, &uifont.Regular18, 235, u.settingsNote, warning)
 		}
 	}
+	if u.backButtonVisible() {
+		drawBackButton(d)
+	}
 	drawStatusBattery(d, p)
 }

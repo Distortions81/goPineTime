@@ -278,10 +278,10 @@ func sampleSettings() Settings {
 }
 
 func TestDisplayRecordCompatibility(t *testing.T) {
-	// Adding display choices uses existing padding, not another word in each
-	// saved/observed settings snapshot on the constrained event-loop stack.
-	if unsafe.Sizeof(Settings{}) != 28 || RecordSize != 160 {
-		t.Fatal("display choices enlarged settings or flash records")
+	// Graph selection adds one settings word but retains the existing flash
+	// record size; its wire byte was reserved and zero in previous firmware.
+	if unsafe.Sizeof(Settings{}) != 32 || RecordSize != 160 {
+		t.Fatal("unexpected settings or flash record layout")
 	}
 	r := Record{HasSettings: true, HasTime: true, Hours: 1234, Use24: true,
 		Settings: Settings{CountdownSeconds: 300, TouchWake: true, FlipScreen: true, PhoneAuto: true,
@@ -303,11 +303,54 @@ func TestDisplayRecordCompatibility(t *testing.T) {
 			}
 		}
 	}
-	for _, invalid := range []byte{6, 7, 128, 255} {
+	for _, invalid := range []byte{6, 7, 24, 96, 255} {
 		b[147] = invalid
 		binary.LittleEndian.PutUint32(b[152:156], crc32.ChecksumIEEE(b[:152]))
 		if _, ok := decode(&b); ok {
 			t.Fatal("accepted unsupported display choice", invalid)
+		}
+	}
+}
+
+func TestActivitySettingsCompatibility(t *testing.T) {
+	for mode := uint8(0); mode < 3; mode++ {
+		for interval := uint8(0); interval < 3; interval++ {
+			for _, steps := range []uint8{0, 16} {
+				s := sampleSettings()
+				options := mode | interval<<2 | steps
+				s.SetActivity(options)
+				s.SetDisplay(true, 2)
+				b := encode(Record{HasSettings: true, Settings: s})
+				r, ok := decode(&b)
+				if !ok || r.Settings != s || r.Settings.Activity() != options || !r.Settings.LightMode() || r.Settings.Brightness() != 2 {
+					t.Fatal("activity/display settings did not round trip", options)
+				}
+			}
+		}
+	}
+}
+
+func TestWatchGraphSettingsWireCompatibility(t *testing.T) {
+	for choice := uint8(0); choice < 3; choice++ {
+		s := sampleSettings()
+		s.WatchGraph = choice
+		b := encode(Record{HasSettings: true, Settings: s})
+		if got, ok := decode(&b); !ok || got.Settings != s {
+			t.Fatal("graph selection did not round trip", choice)
+		}
+		// Previous firmware left this byte zero: retain its settings and use Off.
+		b[148] = 0
+		binary.LittleEndian.PutUint32(b[152:156], crc32.ChecksumIEEE(b[:152]))
+		if got, ok := decode(&b); !ok || got.Settings.WatchGraph != 0 {
+			t.Fatal("old graph default is not Off")
+		}
+	}
+	for _, invalid := range []byte{3, 128, 255} {
+		b := encode(Record{HasSettings: true, Settings: sampleSettings()})
+		b[148] = invalid
+		binary.LittleEndian.PutUint32(b[152:156], crc32.ChecksumIEEE(b[:152]))
+		if _, ok := decode(&b); ok {
+			t.Fatal("unsupported graph selection accepted", invalid)
 		}
 	}
 }

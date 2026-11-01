@@ -19,7 +19,7 @@ func TestAppsGridNavigationAndGaps(t *testing.T) {
 		{"Timer", 63, 135, pageCountdown},
 		{"Music", 177, 135, pageMusic},
 		{"Messages", 63, 197, pageInbox},
-		{"Weather disabled", 177, 197, pageApps},
+		{"Health", 177, 197, pageHealth},
 		{"column gap", 120, 73, pageApps},
 		{"first row gap", 63, 104, pageApps},
 		{"second row gap", 177, 166, pageApps},

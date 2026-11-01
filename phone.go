@@ -100,7 +100,7 @@ func (u *watchUI) handlePhone(e inputEvent, now time.Time, state updateState) {
 		u.openMusic()
 		return
 	}
-	if e.Kind == inputSwipeRight || (e.Kind == inputTap && inRect(e, 0, 0, 60, 44)) {
+	if e.Kind == inputSwipeRight || backButtonTapped(e) {
 		u.back(state)
 		return
 	}

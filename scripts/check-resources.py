@@ -36,6 +36,9 @@ MEMORY_TYPES = (
     "main.watchUI", "main.notificationState", "main.phoneState", "main.weatherState",
     "main.directUpdater", "main.updateWorkspace", "main.settingsPersistence",
     "main.timerResume", "main.frameRenderer", "main.pineTimeDisplay",
+    "main.healthState", "main.boardHealthDevice", "main.pulseDetector",
+    "main.healthHistory",
+    "main.heartSignal",
     "github.com/Distortions81/goPine/internal/ota.Receiver",
     "github.com/Distortions81/goPine/internal/notifications.Inbox",
     "github.com/Distortions81/goPine/internal/notifications.Message",
@@ -204,6 +207,7 @@ def audit(symbols, by_address, task_stack, c_frames=None):
     paths = {
         "initialization": base + frame("main.openApplication", False) + frame("main.buildClockTime"),
         "timer": live + sizes[TICK] + frame("(*main.watchUI).loadRuntime", False) + calendar,
+        "health_tracking": live + frame("(*main.watchUI).tickHealth", False) + frame("(*main.healthState).tick", False) + max(frame("(*main.boardHealthDevice).SetSteps", False), frame("(*main.boardHealthDevice).SetHeart", False), frame("(*main.pulseDetector).sample", False) + frame("(*main.pulseDetector).estimate", False)) + frame("main.pauseRadioController", False),
         "settings_save": live + callback + frame("(*main.timeSyncController).saveSettings", False) + frame("(*main.settingsPersistence).update", False) + sizes[FLUSH] + max(sizes[SAVE], snapshot + calendar),
         "input": live + frame("(*main.watchUI).handle", False) + callback,
         "frame_change": live + frame("main.changedStrips", False),

@@ -11,6 +11,7 @@ use an SWD debugger for the first install, then update over Bluetooth.
   <img src="docs/images/clock.png" alt="Dark watch face" width="180">
   <img src="docs/images/clock-light.png" alt="Light watch face" width="180">
   <img src="docs/images/apps.png" alt="Apps menu" width="180">
+  <img src="docs/images/health.png" alt="Heart-rate and pedometer options" width="180">
   <img src="docs/images/stopwatch.png" alt="Stopwatch with lap time" width="180">
 </p>
 
@@ -20,13 +21,40 @@ use an SWD debugger for the first install, then update over Bluetooth.
 
 - 12/24-hour clock, five alarms with snooze, stopwatch with laps, and countdown timer.
 - Battery and charging display; light/dark themes, brightness, rotation, and tap to wake.
+- Muted clock-face hints show the Apps (swipe right) and Settings (swipe left) menus.
 - Persistent settings, alarms, and timer state.
 - Optional Bluetooth time sync, notifications, and music controls; two saved devices.
 - In-app Bluetooth firmware updates with on-watch confirmation and rollback.
+- Health options: off, periodic (5/15/30 minutes), or continuous heart-rate tracking,
+  plus an independent hardware pedometer toggle. Both default to off.
 
 Phone features depend on the companion app and permissions. InfiniLink music
 controls target Apple Music; notification dismissal is local to the watch.
-Weather is disabled in the UI. Motion and heart-rate tracking are not implemented.
+Health replaces the disabled Weather card in Apps. Tap the heart-rate row to
+cycle modes; periodic mode samples for 30 seconds per interval, including while
+the screen sleeps. The last estimated BPM, its age, and steps since boot appear below the
+controls. Steps accumulate across toggles, but reset on reboot; they are not a
+daily history. Tracking choices are saved alongside the other settings. Sensor
+faults stop tracking until its option is toggled off and on; firmware updates
+temporarily suspend both sensors. Off mode keeps the previous sensor shutdown
+behavior. The heart-rate estimator is experimental and needs on-watch validation.
+
+The fourth Health button opens **Watch face graph**, with **Off**, **Heart rate**,
+and **Steps** choices. The clock can show the last hour of BPM readings or bars
+of steps per minute, with a labeled numeric scale. Enable the corresponding
+tracking separately. History stays in RAM and resets on reboot; missing readings
+remain gaps. Existing clock setup prompts take priority over the graph.
+
+Tap the last heart-reading line in Health for **Heart signal** diagnostics:
+raw optical waveform, ambient reading, ADC range, sample count, accepted BPM
+count, largest sampling gap, and verified sensor register readback. This records
+acquisition evidence even when no BPM is accepted and retains the last periodic
+attempt until the next measurement. See [heart-rate investigation](docs/heart-rate.md).
+
+<p>
+  <img src="docs/images/clock-heart-graph.png" alt="Heart-rate graph on clock face" width="180">
+  <img src="docs/images/clock-step-graph.png" alt="Steps-per-minute graph on clock face" width="180">
+</p>
 Battery percentage is a voltage estimate, and runtime is still being evaluated.
 
 ## Build and first install

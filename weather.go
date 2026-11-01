@@ -44,7 +44,7 @@ func (u *watchUI) handleWeather(e inputEvent, now time.Time, state updateState) 
 		return
 	}
 	if e.Kind == inputSleep || e.Kind == inputCancel || e.Kind == inputSwipeRight ||
-		(e.Kind == inputTap && inRect(e, 0, 0, 60, 44)) {
+		backButtonTapped(e) {
 		w.open = false
 		if e.Kind != inputCancel && e.Kind != inputSleep {
 			u.back(state)

@@ -63,6 +63,37 @@ func TestSettingsWritesAreCoalescedAndPowerGated(t *testing.T) {
 	}
 }
 
+func TestHealthSettingsRestoreWithoutPeriodicFlashWrites(t *testing.T) {
+	f, j, _ := clockTestStorage(t)
+	now := time.Unix(100, 0)
+	u := newWatchUI(firmwareConfirmed)
+	p := loadSettings(&u, now, j)
+	u.healthOptions = heartPeriodic | 8 | stepsEnabled
+	u.watchGraph = graphSteps
+	p.update(&u, now, true)
+	p.update(&u, now.Add(settingsSaveDelay), true)
+	writes := f.writes
+	if writes == 0 {
+		t.Fatal("health choices were not saved")
+	}
+	loaded := newWatchUI(firmwareConfirmed)
+	loadSettings(&loaded, now.Add(time.Minute), j)
+	if loaded.healthOptions != u.healthOptions || loaded.watchGraph != graphSteps || loaded.health != nil {
+		t.Fatal("health options failed to restore without activating sensors")
+	}
+	d := &fakeHealthDevice{}
+	u.health = &healthState{device: d}
+	u.tickHealth(now, false)
+	for i := 0; i < 100; i++ {
+		d.count++
+		u.tickHealth(now.Add(time.Duration(i)*time.Second), false)
+		p.update(&u, now.Add(time.Duration(i)*time.Second), true)
+	}
+	if f.writes != writes {
+		t.Fatal("sensor readings caused periodic flash writes")
+	}
+}
+
 func TestSettingsCheckFreshPowerWithoutRetryDeadline(t *testing.T) {
 	f, j, _ := clockTestStorage(t)
 	now := time.Unix(0, 0)

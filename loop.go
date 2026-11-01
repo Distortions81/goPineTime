@@ -20,6 +20,7 @@ type watchLoop struct {
 
 func (l *watchLoop) run() error {
 	defer l.display.SetVibration(false)
+	defer l.ui.stopHealth()
 	var previous frameKey
 	painted, awake := false, true
 	flipped := false
@@ -55,6 +56,7 @@ func (l *watchLoop) run() error {
 			l.updater.tick(l.ui, now, power)
 		}
 		exclusive := l.ui.updateExclusive() || l.sync.directMode
+		l.ui.tickHealth(now, exclusive)
 		if !exclusive && l.beforeSync != nil {
 			l.beforeSync(now)
 		}

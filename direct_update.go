@@ -279,7 +279,7 @@ func (u *watchUI) handleTransfer(e inputEvent, now time.Time) uiAction {
 	if t == nil {
 		return actionNone
 	}
-	if e.Kind == inputSleep || e.Kind == inputSwipeRight || (e.Kind == inputTap && inRect(e, 0, 0, 60, 44)) || (e.Kind == inputTap && inRect(e, 12, 184, 114, 232)) {
+	if e.Kind == inputSleep || e.Kind == inputSwipeRight || backButtonTapped(e) || (e.Kind == inputTap && inRect(e, 12, 184, 114, 232)) {
 		t.open = false
 		u.page = pageSettings
 		return actionNone

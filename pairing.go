@@ -123,6 +123,7 @@ func (u *watchUI) handlePairing(e inputEvent) bool {
 		return false
 	}
 	if e.Kind == inputSleep || e.Kind == inputSwipeRight ||
+		backButtonTapped(e) ||
 		(e.Kind == inputTap && inRect(e, 16, 188, 224, 232)) {
 		u.pairing.cancel = true
 	}
@@ -130,7 +131,7 @@ func (u *watchUI) handlePairing(e inputEvent) bool {
 }
 func (u *watchUI) handlePairingSettings(e inputEvent) {
 	p := u.pairing
-	if e.Kind == inputSwipeRight || (e.Kind == inputTap && inRect(e, 0, 0, 60, 44)) {
+	if e.Kind == inputSwipeRight || backButtonTapped(e) {
 		p.confirm = false
 		u.openPhone()
 		return

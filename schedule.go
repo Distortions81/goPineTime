@@ -37,6 +37,9 @@ func (s wakeSchedule) delay() time.Duration {
 
 func nextLoopDelay(now time.Time, u *watchUI, nextPower time.Time, awake bool) time.Duration {
 	schedule := newWakeSchedule(now, noDeadlineDelay)
+	if u.health != nil && !u.health.next.IsZero() {
+		schedule.by(u.health.next)
+	}
 	if u.updateExclusive() {
 		schedule.by(nextPower)
 		schedule.by(u.transfer.expires)

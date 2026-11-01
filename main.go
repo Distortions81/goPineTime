@@ -203,6 +203,15 @@ func (u *watchUI) frameKey(now time.Time, power powerStatus) frameKey {
 	if u.page == pageBatteryConfirm {
 		key.step = int(u.batteryChoice)
 	}
+	if u.page == pageHealth {
+		key.step = int(u.healthOptions)
+		if u.health != nil {
+			key.weatherRevision = u.health.revision
+			if !u.health.lastReading.IsZero() {
+				key.clockMinute = now.Unix() / 60
+			}
+		}
+	}
 	if (u.page == pageMusic || u.page == pagePhone) && u.phone != nil {
 		p := u.phone
 		key.weatherRevision, key.message, key.step = p.revision, p.status, int(p.mode)
@@ -215,6 +224,19 @@ func (u *watchUI) frameKey(now time.Time, power powerStatus) frameKey {
 	}
 	if u.page == pageClock {
 		key.notificationRevision = uint32(u.unreadNotifications())
+		key.step = int(u.watchGraph)
+		if u.watchGraphVisible() && u.health != nil && u.health.history != nil {
+			key.weatherRevision = u.health.history.revision
+		}
+	}
+	if u.page == pageWatchGraph {
+		key.step = int(u.watchGraph)
+	}
+	if u.page == pageHeartSignal && u.health != nil {
+		key.weatherRevision = u.health.revision
+		if u.health.heartOn {
+			key.syncSecond = now.Unix()
+		}
 	}
 	if (u.page == pageInbox || u.page == pageNotification) && u.notifications != nil {
 		n := u.notifications

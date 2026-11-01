@@ -110,7 +110,7 @@ func (u *watchUI) handleNotifications(e inputEvent, state updateState) {
 		u.openInbox()
 		return
 	}
-	if e.Kind == inputSwipeRight || (e.Kind == inputTap && inRect(e, 0, 0, 60, 42)) {
+	if e.Kind == inputSwipeRight || backButtonTapped(e) {
 		u.back(state)
 		return
 	}

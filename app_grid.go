@@ -26,7 +26,7 @@ func appCardLabel(index int) string {
 	case 4:
 		return "Messages"
 	default:
-		return "Weather"
+		return "Health"
 	}
 }
 
@@ -47,7 +47,8 @@ func (u *watchUI) handleAppsTap(e inputEvent) {
 			u.openMusic()
 		case 4:
 			u.openInbox()
-			// Weather remains visible but unavailable until companion delivery works.
+		case 5:
+			u.openHealth()
 		}
 		return
 	}
@@ -62,9 +63,6 @@ func drawApps(d canvas) {
 		}
 		gfx.RoundBox(d, x, y, appCardWidth, appCardHeight, 6, card)
 		foreground, icon := white, accent
-		if index == 5 {
-			foreground, icon = disabled, disabled
-		}
 		drawAppIcon(d, index, x+appCardWidth/2, y+17, icon)
 		label := appCardLabel(index)
 		width, _ := lineWidth(&uifont.Regular18, label)
@@ -112,11 +110,12 @@ func drawAppIcon(d canvas, index int, x, y int16, c color.RGBA) {
 		gfx.Line(d, x-6, y+11, x, y+6, c)
 		gfx.Line(d, x-7, y-4, x+7, y-4, c)
 		gfx.Line(d, x-7, y, x+3, y, c)
-	case 5: // Sun behind a cloud.
-		gfx.Circle(d, x+5, y-4, 6, c)
-		gfx.FillCircle(d, x-5, y+2, 5, c)
-		gfx.FillCircle(d, x+1, y+1, 6, c)
-		gfx.FillCircle(d, x+7, y+4, 4, c)
-		gfx.FillBox(d, x-7, y+3, 17, 6, c)
+	case 5: // Pulse trace.
+		gfx.Line(d, x-13, y, x-6, y, c)
+		gfx.Line(d, x-6, y, x-3, y-8, c)
+		gfx.Line(d, x-3, y-8, x+2, y+9, c)
+		gfx.Line(d, x+2, y+9, x+6, y-3, c)
+		gfx.Line(d, x+6, y-3, x+9, y, c)
+		gfx.Line(d, x+9, y, x+13, y, c)
 	}
 }

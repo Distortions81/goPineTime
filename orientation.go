@@ -20,7 +20,7 @@ func orientInput(e inputEvent, flipped bool) inputEvent {
 	return e
 }
 func (u *watchUI) handleDisplaySettings(e inputEvent) {
-	if e.Kind == inputSwipeRight || (e.Kind == inputTap && inRect(e, 0, 0, 60, 44)) {
+	if e.Kind == inputSwipeRight || backButtonTapped(e) {
 		u.page = pageSettings
 		return
 	}

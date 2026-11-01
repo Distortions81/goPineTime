@@ -45,6 +45,9 @@ const (
 	pagePairingSettings
 	pageCharging // Frame identity for the full-screen power notice overlay.
 	pageBatteryConfirm
+	pageHealth
+	pageWatchGraph
+	pageHeartSignal
 )
 
 type uiAction uint8
@@ -87,6 +90,9 @@ type watchUI struct {
 	transfer      *transferState
 	powerNotice   bool
 	pairing       *pairingState
+	healthOptions uint8
+	watchGraph    uint8
+	health        *healthState
 }
 
 func newWatchUI(state updateState) watchUI {
@@ -115,7 +121,11 @@ func (u *watchUI) showMessage(message string) {
 
 func (u *watchUI) back(state updateState) {
 	u.cancelHold()
-	if u.page == pagePhone {
+	if u.page == pageWatchGraph || u.page == pageHeartSignal {
+		u.page = pageHealth
+	} else if u.page == pageHealth {
+		u.page = pageApps
+	} else if u.page == pagePhone {
 		u.page = pageSettings
 	} else if u.page == pageNotification {
 		u.page = pageInbox
@@ -165,6 +175,20 @@ func (u *watchUI) handle(e inputEvent, now time.Time, state updateState, power p
 		return actionNone
 	}
 	if u.handlePowerNotice(e) {
+		return actionNone
+	}
+	if u.page == pageHealth {
+		u.handleHealth(e)
+		return actionNone
+	}
+	if u.page == pageWatchGraph {
+		u.handleWatchGraph(e)
+		return actionNone
+	}
+	if u.page == pageHeartSignal {
+		if e.Kind == inputSwipeRight || backButtonTapped(e) {
+			u.page = pageHealth
+		}
 		return actionNone
 	}
 	if u.page == pageBatteryConfirm {
@@ -257,7 +281,7 @@ func (u *watchUI) handle(e inputEvent, now time.Time, state updateState, power p
 	if e.Kind != inputTap {
 		return actionNone
 	}
-	if u.page != pageClock && u.page != pageTrial && inRect(e, 0, 0, 60, 44) {
+	if u.page != pageClock && u.page != pageTrial && backButtonTapped(e) {
 		u.back(state)
 		return actionNone
 	}
@@ -410,6 +434,18 @@ const updateCounterBaseline = 122
 const updateProgressY = 134
 
 func (u *watchUI) draw(d canvas, now time.Time) {
+	if u.page == pageHeartSignal {
+		u.drawHeartSignal(d)
+		return
+	}
+	if u.page == pageWatchGraph {
+		u.drawWatchGraphOptions(d)
+		return
+	}
+	if u.page == pageHealth {
+		u.drawHealth(d, now)
+		return
+	}
 	if u.page == pageBatteryConfirm {
 		u.drawBatteryConfirm(d)
 		return
@@ -423,8 +459,12 @@ func (u *watchUI) draw(d canvas, now time.Time) {
 		return
 	}
 	if u.page == pageClock {
+		if u.watchGraphVisible() {
+			u.drawWatchGraph(d, now)
+		}
 		now = u.clock.Now(now)
 		writeLine(d, &uifont.Regular18, 18, 31, "goPine", accent)
+		drawClockMenuHints(d)
 		meridiem := ""
 		if !u.use24 {
 			meridiem = formatMeridiem(now)
@@ -435,13 +475,13 @@ func (u *watchUI) draw(d canvas, now time.Time) {
 			centered(d, &uifont.Regular18, 181, "Set or sync time", warning)
 		}
 		if count := u.unreadNotifications(); count > 0 {
-			centered(d, &uifont.Regular18, 216, "Messages: "+decimal(count), accent)
+			y := int16(216)
+			if u.watchGraphVisible() {
+				y = 235
+			}
+			centered(d, &uifont.Regular18, y, "Messages: "+decimal(count), accent)
 		}
 		return
-	}
-	if u.page != pageTrial && u.page != pageAlert {
-		gfx.Line(d, 25, 16, 16, 24, accent)
-		gfx.Line(d, 16, 24, 25, 32, accent)
 	}
 	if u.page == pageTimeSettings || u.page == pageSetTime || u.page == pageSetDate || u.page == pageAlarmEdit {
 		u.drawClockSettings(d, now)

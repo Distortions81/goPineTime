@@ -155,8 +155,8 @@ func TestWeatherAgesNavigationAndFrameKeys(t *testing.T) {
 	}
 	cache := u.weather.cache
 	u.handle(inputEvent{Kind: inputTap, X: 177, Y: 197}, now, firmwareConfirmed, powerStatus{})
-	if u.page != pageApps || u.weather.open || u.weather.cache != cache {
-		t.Fatal("disabled Weather card opened a session or changed cached weather")
+	if u.page != pageHealth || u.weather.open || u.weather.cache != cache {
+		t.Fatal("Health card opened a weather session or changed cached weather")
 	}
 	end := time.Date(2026, 12, 31, 23, 0, 0, 0, time.UTC)
 	if stamp := forecastDay(end, 0); stamp.Year() != 2027 || stamp.Month() != time.January || stamp.Day() != 1 {

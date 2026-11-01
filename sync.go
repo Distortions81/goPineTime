@@ -182,7 +182,7 @@ func (u *watchUI) handleTimeSync(e inputEvent, now time.Time) {
 		u.syncStatus = "Sync timed out"
 	}
 	if e.Kind == inputSleep || e.Kind == inputSwipeRight ||
-		(e.Kind == inputTap && (inRect(e, 0, 0, 60, 44) || inRect(e, 12, 188, 114, 232))) {
+		backButtonTapped(e) || (e.Kind == inputTap && inRect(e, 12, 188, 114, 232)) {
 		u.sync.Cancel()
 		u.page = pageTimeSettings
 		return
