@@ -44,8 +44,18 @@ func TestDisplayControlsHaveSeparateRowsAndRepaint(t *testing.T) {
 		t.Fatal("theme row changed another setting")
 	}
 	for _, want := range []uint8{brightnessLow, brightnessMedium, brightnessHigh} {
+		before := u.brightness
 		tap(108)
-		u.handle(inputEvent{Kind: inputTap, X: 177, Y: 210}, now, firmwareConfirmed, powerStatus{})
+		if want == brightnessLow {
+			if u.page != pageDisplaySettings || u.batteryChoice != batteryNone {
+				t.Fatal("lowering brightness must apply without a battery warning")
+			}
+		} else {
+			if u.page != pageBatteryConfirm || u.brightness != before {
+				t.Fatal("raising brightness must wait for battery confirmation", want)
+			}
+			u.handle(inputEvent{Kind: inputTap, X: 177, Y: 210}, now, firmwareConfirmed, powerStatus{})
+		}
 		if u.brightness != want || !u.lightMode || u.touchWake || u.flipScreen {
 			t.Fatal("brightness did not cycle independently", want)
 		}

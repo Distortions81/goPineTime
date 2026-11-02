@@ -31,7 +31,12 @@ func (u *watchUI) handleDisplaySettings(e inputEvent) {
 	case inRect(e, 16, 42, 224, 82):
 		u.lightMode = !u.lightMode
 	case inRect(e, 16, 88, 224, 128):
-		u.askBattery(batteryHigh + batteryChoice((validBrightness(u.brightness)+1)%3))
+		next := (validBrightness(u.brightness) + 1) % 3
+		if backlightChannels(next, true) > backlightChannels(u.brightness, true) {
+			u.askBattery(batteryHigh + batteryChoice(next))
+		} else {
+			u.brightness = next
+		}
 	case inRect(e, 16, 134, 224, 174):
 		if u.touchWake {
 			u.touchWake = false
