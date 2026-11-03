@@ -27,6 +27,7 @@ func (u *watchUI) settings() checkpoint.Settings {
 	s.SetDisplay(u.lightMode, u.brightness)
 	s.SetActivity(u.healthOptions)
 	s.WatchGraph = u.watchGraph
+	s.Quiet = u.quiet
 	for i, a := range u.timers.alarms {
 		s.Alarms[i] = checkpoint.Alarm{Hour: uint8(a.hour), Minute: uint8(a.minute), Repeat: uint8(a.repeat), Enabled: a.enabled}
 	}
@@ -243,6 +244,7 @@ func loadSettings(u *watchUI, now time.Time, j *checkpoint.Journal) *settingsPer
 			u.lightMode, u.brightness = r.Settings.LightMode(), r.Settings.Brightness()
 			u.healthOptions = r.Settings.Activity()
 			u.watchGraph = r.Settings.WatchGraph
+			u.quiet = r.Settings.Quiet
 			for i, a := range r.Settings.Alarms {
 				u.timers.alarms[i] = alarm{hour: a.Hour, minute: a.Minute, repeat: alarmRepeat(a.Repeat), enabled: a.Enabled}
 			}

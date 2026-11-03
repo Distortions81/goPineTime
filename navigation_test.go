@@ -16,6 +16,8 @@ func TestSharedBackButtonDrawingAndNavigation(t *testing.T) {
 		{pageTransfer, pageSettings}, {pageDisplaySettings, pageSettings}, {pagePairingSettings, pagePhone}, {pageBatteryConfirm, pageDisplaySettings}, {pageHealth, pageApps},
 		{pageWatchGraph, pageHealth},
 		{pageHeartSignal, pageHealth},
+		{pageQuickControls, pageClock}, {pageQuietHours, pageQuickControls}, {pageBatteryHistory, pageClock},
+		{pageBatteryUsage, pageBatteryHistory},
 	} {
 		u := newWatchUI(firmwareConfirmed)
 		u.page = tc.from

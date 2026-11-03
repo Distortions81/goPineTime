@@ -79,6 +79,12 @@ func (t *touchTracker) decode(data [6]byte, now time.Time) touchEvent {
 			} else {
 				event.Kind = inputSwipeRight
 			}
+		} else if abs16(dy) >= 50 && abs16(dy) > 2*abs16(dx) {
+			if dy < 0 {
+				event.Kind = inputSwipeUp
+			} else {
+				event.Kind = inputSwipeDown
+			}
 		}
 	}
 	t.down, t.suppress = false, false

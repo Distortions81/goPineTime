@@ -14,15 +14,15 @@ func TestBatteryConfirmationDefersChangesAndCancelsOnSleep(t *testing.T) {
 			u := newWatchUI(firmwareConfirmed)
 			u.openPhone()
 			u.openInbox()
-			u.notifications.quiet = true
+			u.quiet |= quietManual
 			before := u.settings()
 			u.askBattery(choice)
 			u.handle(inputEvent{Kind: inputTap, X: 120, Y: 210}, now, firmwareConfirmed, powerStatus{}) // Inert button gap.
-			if u.page != pageBatteryConfirm || u.settings() != before || !u.notifications.quiet || u.phone.mode != phoneOff {
+			if u.page != pageBatteryConfirm || u.settings() != before || u.quiet&quietManual == 0 || u.phone.mode != phoneOff {
 				t.Fatal("proposal changed settings or started Bluetooth", choice)
 			}
 			u.handle(cancel, now, firmwareConfirmed, powerStatus{})
-			if u.page == pageBatteryConfirm || u.batteryChoice != batteryNone || u.settings() != before || !u.notifications.quiet || u.phone.mode != phoneOff {
+			if u.page == pageBatteryConfirm || u.batteryChoice != batteryNone || u.settings() != before || u.quiet&quietManual == 0 || u.phone.mode != phoneOff {
 				t.Fatal("cancel applied the proposal", choice, cancel)
 			}
 			u.askBattery(choice)
@@ -37,7 +37,7 @@ func TestBatteryConfirmationDefersChangesAndCancelsOnSleep(t *testing.T) {
 					t.Fatal("Bluetooth confirmation lost")
 				}
 			case batteryBuzz:
-				if u.notifications.quiet {
+				if u.quiet&quietManual != 0 {
 					t.Fatal("buzz confirmation lost")
 				}
 			default:
@@ -55,11 +55,11 @@ func TestNotificationBuzzEnableRequiresConfirmation(t *testing.T) {
 	now := time.Unix(0, 0)
 	tap := inputEvent{Kind: inputTap, X: 60, Y: 58}
 	u.handle(tap, now, firmwareConfirmed, powerStatus{})
-	if !u.notifications.quiet || u.page != pageInbox {
+	if u.quiet&quietManual == 0 || u.page != pageInbox {
 		t.Fatal("quiet must apply immediately")
 	}
 	u.handle(tap, now, firmwareConfirmed, powerStatus{})
-	if !u.notifications.quiet || u.page != pageBatteryConfirm {
+	if u.quiet&quietManual == 0 || u.page != pageBatteryConfirm {
 		t.Fatal("buzz bypassed confirmation")
 	}
 }

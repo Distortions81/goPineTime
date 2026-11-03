@@ -14,7 +14,7 @@ func (q *touchQueue) push(e touchEvent) bool {
 		return true
 	}
 	switch e.Kind {
-	case inputRelease, inputCancel, inputTap, inputSwipeLeft, inputSwipeRight:
+	case inputRelease, inputCancel, inputTap, inputSwipeLeft, inputSwipeRight, inputSwipeUp, inputSwipeDown:
 		n := 0
 		for i := 0; i < q.n; i++ {
 			if q.events[i].Kind != inputHold {

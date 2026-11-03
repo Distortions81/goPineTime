@@ -249,6 +249,9 @@ func TestScriptSleepDoesNotSamplePowerAndRefreshesOnWake(t *testing.T) {
 	if d.waits != 3 {
 		t.Fatal("idle sleep kept waking the application loop", d.waits)
 	}
+	if u.battery == nil || u.battery.usage.asleep != 12*60*60 {
+		t.Fatal("usage accounting missed sleeping interval without additional wakeups")
+	}
 }
 
 func TestScriptTouchSettingSavesWithoutPeriodicPowerPoll(t *testing.T) {

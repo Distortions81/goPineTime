@@ -100,7 +100,29 @@ class ResourceChecks(unittest.TestCase):
         frames[0xa000] = 40
         symbols[resources.INPUT_VECTORS] = 0x20001000
         symbols.update(_heap_start=0x20005AC0, _heap_end=0x20010000)
+        symbols.update(__isr_vector=0x8020, _sidata=0x50000, _sdata=0x20000800, _edata=0x20001000)
         return symbols, frames
+
+    def test_image_growth_includes_initialized_ram_and_tlv(self):
+        symbols, frames = self.fixture()
+        self.assertEqual(resources.image_size(symbols), 0x50000 + 0x800 - 0x8000 + 40)
+        symbols['_sidata'] = 0x8000 + resources.FLASH_BUDGET
+        self.assertTrue(any('image exceeds' in e for e in resources.audit(symbols, frames, 8192)['errors']))
+        symbols['__isr_vector'] = 0
+        with self.assertRaises(ValueError):
+            resources.image_size(symbols)
+
+    def test_stack_margin_cannot_be_spent_on_features(self):
+        symbols, frames = self.fixture()
+        frames[symbols[resources.LOOP]] += 240
+        errors = resources.audit(symbols, frames, 8192)['errors']
+        self.assertTrue(any('margin 512' in e for e in errors))
+
+    def test_daily_hot_allocation_guard(self):
+        lines = ['/repo/battery_history.go:100: object allocated on the heap: escapes',
+                 '/repo/quiet.go:80: object allocated on the heap: escapes',
+                 '/repo/quick_controls.go:40: object allocated on the heap: escapes']
+        self.assertEqual(resources.daily_hot_allocations('\n'.join(lines)), lines)
 
     def test_budgets(self):
         symbols, frames = self.fixture()

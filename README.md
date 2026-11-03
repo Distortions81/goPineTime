@@ -21,6 +21,7 @@ use an SWD debugger for the first install, then update over Bluetooth.
 
 - 12/24-hour clock, five alarms with snooze, stopwatch with laps, and countdown timer.
 - Battery and charging display; light/dark themes, brightness, rotation, and tap to wake.
+- Quick controls, saved notification quiet hours, and a bounded battery-voltage history.
 - Muted clock-face hints open Apps and Settings by either tapping or swiping.
 - Persistent settings, alarms, and timer state.
 - Optional Bluetooth time sync, notifications, and music controls; two saved devices.
@@ -65,6 +66,41 @@ attempt until the next measurement. See [heart-rate investigation](docs/heart-ra
   <img src="docs/images/clock-step-graph.png" alt="Steps-per-minute graph on clock face" width="180">
 </p>
 Battery percentage is a voltage estimate, and runtime is still being evaluated.
+
+Swipe down from the clock, or tap its top-center chevron, for quick brightness,
+touch-wake and notification-buzz controls, Bluetooth settings, and **Quiet hours**.
+Swipe up or back to close controls. Changes that reduce power apply immediately;
+brightness increases, touch wake, and notification buzz retain their confirmation.
+Manual quiet and the schedule survive reboot. Quiet hours default to off; the
+first opt-in selects 22:00–07:00. Tap either time to advance it by one hour;
+equal times mean all day. The schedule requires manually set or phone-synchronized
+time, and waits after an approximate reboot handoff. Notifications still arrive
+silently; alarms and countdown alerts still vibrate. Ending quiet hours does not
+buzz old messages.
+
+Tap the battery status on the clock or quick-controls screen for voltage history.
+It keeps 32 points in RAM, normally at least 15 minutes apart, with extra points
+for observed charging and power-setting changes. Yellow ticks mark these changes.
+It reuses existing power samples and does not wake a sleeping watch for logging;
+gaps longer than 30 minutes are disconnected. Unplug elapsed time is shown through
+the latest sample only when an unplug was observed since boot. History resets on
+reboot; the voltage plot does not measure current draw.
+
+Swipe left on that history for **Battery use**. It first learns from observed
+sleep/wake time and existing battery samples. **Sleep** estimates remaining days
+if the screen stays asleep with the current background features; it needs three
+qualifying spans totaling at least 24 hours, each at least four hours long with
+at most 30 seconds of screen-on time and at least five percentage points of drop.
+Charging, unsettled readings, firmware updates and feature changes invalidate
+candidate spans. Bluetooth/touch/sensor/notification policy changes reset sleep learning.
+**Typical** estimates days per charge from actual mixed use after two observed
+near-full-to-low discharge cycles. **Screen** shows average screen-on minutes
+per day, using those cycles when available and otherwise the time since boot.
+Both estimates leave 10% in reserve and show ranges; they are experimental
+voltage-based approximations, not measured battery capacity or guaranteed runtime.
+Until enough evidence exists, they display **Learning**. Learning stays in RAM
+and resets on reboot; it adds no sleeping ADC polls or flash writes.
+See the [feature budgets and deferred work](docs/feature-budget-2026-11-03.md).
 
 ## Build and first install
 

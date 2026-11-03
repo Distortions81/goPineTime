@@ -20,6 +20,9 @@ TICK = "(*main.watchUI).tickTimers"
 FLUSH = "(*main.settingsPersistence).flush"
 SAVE = "(*github.com/Distortions81/goPine/internal/checkpoint.Journal).save"
 RESERVE = 2048
+STACK_MARGIN = 512
+FLASH_BUDGET = 320 * 1024  # Leave 140 KiB of the MCUboot allowance unspent.
+IMAGE_LIMIT = 0x73000
 PORT_ISR = "gopine_port_interrupt"
 INPUT_VECTORS = "main.inputVectors"
 BLE_CRYPTO_FRAMES = (
@@ -39,6 +42,9 @@ MEMORY_TYPES = (
     "main.healthState", "main.boardHealthDevice", "main.pulseDetector",
     "main.healthHistory",
     "main.heartSignal",
+    "main.batteryHistory",
+    "main.batteryUsage",
+    "github.com/Distortions81/goPine/internal/checkpoint.Journal",
     "github.com/Distortions81/goPine/internal/ota.Receiver",
     "github.com/Distortions81/goPine/internal/notifications.Inbox",
     "github.com/Distortions81/goPine/internal/notifications.Message",
@@ -80,6 +86,24 @@ def recycling_allocations(text):
 def health_hot_allocations(text):
     return [line for line in text.splitlines() if "object allocated on the heap" in line
             and re.search(r"/(?:health|health_graph|heart_signal|pulse|format)\.go:", line)]
+
+
+def daily_hot_allocations(text):
+    # The compiler filter selects draw/quiet helpers and batteryHistory.add,
+    # excluding recordBattery's single intentional first-use ring allocation.
+    return [line for line in text.splitlines() if "object allocated on the heap" in line
+            and re.search(r"/(?:battery_history|battery_usage|battery_usage_ui|quiet|quick_controls)\.go:", line)]
+
+
+def image_size(symbols):
+    # The pinned linker puts initialized RAM after text in flash. Match the
+    # packager's header, word alignment and 40-byte SHA TLV, including .data.
+    if symbols["__isr_vector"] != 0x8020 or symbols["_edata"] < symbols["_sdata"]:
+        raise ValueError("Changed firmware load layout; review image budget")
+    end = symbols["_sidata"] + symbols["_edata"] - symbols["_sdata"]
+    if not 0x8020 <= symbols["_sidata"] <= end < 0x8000 + IMAGE_LIMIT:
+        raise ValueError("Invalid flash load extent")
+    return ((end + 3) & ~3) - 0x8000 + 40
 
 
 def runtime_rng_calls(text):
@@ -224,6 +248,24 @@ def audit(symbols, by_address, task_stack, c_frames=None):
         "pairing_update": live + frame("(*main.timeSyncController).updatePairing", False) + frame("(main.pineTimeRadio).ForgetPhone", False),
         "render": live + frame("(*main.watchLoop).paintFrame", False) + frame("(*main.frameRenderer).renderStrips", False) + frame("(*main.watchLoop).run$1", False),
     }
+    quiet = frame("(*main.watchUI).notificationQuiet", False) + frame("(*main.watchUI).scheduledQuiet", False)
+    for name in ("notification_update", "apple_notification_update"):
+        paths[name] += quiet + frame("(*main.watchUI).notificationBuzzDeadline", False)
+    paths["notification_motor"] = live + frame("(*main.watchUI).notificationVibrating", False) + quiet
+    account = frame("(*main.batteryUsage).account", False)
+    observe = frame("(*main.batteryUsage).observe", False) + account
+    paths["battery_history"] = live + frame("(*main.watchLoop).samplePower", False) + frame("(*main.watchUI).recordBattery", False) + max(
+        frame("(*main.batteryHistory).add", False), observe,
+        frame("(*main.batteryUsage).sample", False) + max(account, frame("(*main.batteryUsage).anchor", False), frame("(*main.batteryUsage).addSleep", False), frame("(*main.batteryUsage).addCycle", False)))
+    paths["battery_usage"] = live + frame("(*main.watchUI).observeBatteryUsage", False) + observe
+    paths["daily_controls"] = paths["input"] + max(
+        frame("(*main.watchUI).handleQuickControls", False) + max(frame("(*main.watchUI).cycleBrightness", False), frame("(*main.watchUI).toggleTouchWake", False), frame("(*main.watchUI).toggleBuzz", False)) + frame("(*main.watchUI).askBattery", False),
+        frame("(*main.watchUI).handleQuietHours", False))
+    paths["daily_render"] = paths["render"] + frame("(*main.watchUI).drawFrame", False) + frame("(*main.watchUI).draw", False) + max(
+        frame("(*main.watchUI).drawQuickControls", False) + quiet,
+        frame("(*main.watchUI).drawQuietHours", False) + max(quiet, frame("main.drawQuietHour", False)),
+        frame("(*main.watchUI).drawBatteryHistory", False) + frame("main.drawNumberPair", False),
+        frame("(*main.watchUI).drawBatteryUsage", False) + max(frame("main.drawUsageRange", False), frame("main.drawNumberPair", False)))
     phone = live + frame("(*main.timeSyncController).update", False) + frame("(*main.timeSyncController).updatePhone", False)
     paths["phone_preflight_save"] = live + callback + sizes[FLUSH] + max(sizes[SAVE], snapshot + calendar)
     paths["phone_time"] = phone + frame("(*main.timeSyncController).receivePhoneTime", False) + max(
@@ -269,9 +311,12 @@ def audit(symbols, by_address, task_stack, c_frames=None):
         errors.append("General time formatting linked into firmware; use the fixed UI formats")
     if any(name in symbols for name in ("sprintf", "snprintf", "vsprintf", "vsnprintf", "vfprintf", "__i_vfprintf", "gopine_upstream_uuid_to_str")):
         errors.append("Generic C formatting linked into firmware; use the bounded UUID formatter")
+    image = image_size(symbols)
+    if image > FLASH_BUDGET:
+        errors.append(f"MCUboot image exceeds {FLASH_BUDGET}-byte growth budget: {image}")
     for name, size in paths.items():
-        if size + RESERVE > task_stack:
-            errors.append(f"{name}: core frames {size} + reserve {RESERVE} > stack {task_stack}")
+        if size + RESERVE + STACK_MARGIN > task_stack:
+            errors.append(f"{name}: core frames {size} + reserve {RESERVE} + margin {STACK_MARGIN} > stack {task_stack}")
     return {
         "task_stack_bytes": task_stack,
         "gpio_port_isr_frame_bytes": port_frame,
@@ -279,6 +324,12 @@ def audit(symbols, by_address, task_stack, c_frames=None):
         "heap_region_bytes": heap,
         "display_strip_bytes": 2880,
         "deeper_call_reserve_bytes": RESERVE,
+        "minimum_stack_margin_bytes": STACK_MARGIN,
+        "selected_stack_margin_bytes": task_stack - RESERVE - max(paths.values()),
+        "image_bytes": image,
+        "image_budget_bytes": FLASH_BUDGET,
+        "image_limit_bytes": IMAGE_LIMIT,
+        "image_free_bytes": IMAGE_LIMIT - image,
         "frames_bytes": sizes,
         "callback_frame_budget_bytes": callback,
         "core_path_frames_bytes": paths,
@@ -313,12 +364,23 @@ def main():
     result["linked_dependency_groups"] = linked_dependencies(sized_symbols)
     result["dependency_size_limitation"] = "Selected named symbols only; inlined code is charged to callers, aliases are deduplicated. Not total dependency cost or heap usage."
     result["target_object_sizes_bytes"] = object_sizes(output("llvm-dwarfdump", "--debug-info"))
+    object_budgets = {"main.watchUI": 704, "main.settingsPersistence": 656,
+                      "main.batteryHistory": 384, "main.batteryUsage": 96}
+    result["target_object_budgets_bytes"] = object_budgets
+    for name, budget in object_budgets.items():
+        size = result["target_object_sizes_bytes"].get(name)
+        if size is None and (name not in ("main.batteryHistory", "main.batteryUsage") or "(*main.watchUI).recordBattery" in symbols):
+            result["errors"].append(f"Missing target object size for {name}; review changed DWARF/type layout")
+        elif size is not None and size > budget:
+            result["errors"].append(f"{name}: object {size} exceeds {budget}-byte budget")
     result["object_size_limitation"] = "Raw ARM object sizes; excludes allocator rounding, GC metadata, object counts and temporary allocations. Not measured free heap."
     if args.allocations:
         result["recycling_allocations"] = recycling_allocations(args.allocations.read_text())
         result["errors"].extend("Recycling path allocates: " + line for line in result["recycling_allocations"])
         result["health_hot_allocations"] = health_hot_allocations(args.allocations.read_text())
         result["errors"].extend("Health hot path allocates: " + line for line in result["health_hot_allocations"])
+        result["daily_hot_allocations"] = daily_hot_allocations(args.allocations.read_text())
+        result["errors"].extend("Daily feature hot path allocates: " + line for line in result["daily_hot_allocations"])
     if args.report:
         args.report.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))

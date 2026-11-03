@@ -10,6 +10,59 @@ import (
 
 var errCut = errors.New("power cut")
 
+func TestQuietSettingsWireCompatibilityAndValidation(t *testing.T) {
+	r := Record{HasSettings: true, Settings: Settings{CountdownSeconds: 300}}
+	b := encode(r)
+	if got, ok := decode(&b); !ok || got.Settings.Quiet != 0 {
+		t.Fatal("old zero-reserved records must default to buzz on and schedule off")
+	}
+	for _, quiet := range []uint16{1, 2 | 22<<2 | 7<<7, 3 | 8<<2 | 8<<7, 23<<2 | 23<<7, 1 << 12} {
+		r.Settings.Quiet = quiet
+		b = encode(r)
+		if got, ok := decode(&b); !ok || got != r || RecordSize != 160 {
+			t.Fatal("quiet settings changed record size or lost fields", quiet)
+		}
+	}
+	for _, quiet := range []uint16{1 << 13, 1 << 15, 24 << 2, 31 << 7} {
+		r.Settings.Quiet = quiet
+		b = encode(r)
+		if _, ok := decode(&b); ok {
+			t.Fatal("accepted unsupported quiet settings", quiet)
+		}
+	}
+}
+
+func TestQuietSettingsInterruptedAtEveryWord(t *testing.T) {
+	for _, count := range []int{1, slots} {
+		base := newFlash()
+		j := mustOpen(t, base)
+		settings := Settings{CountdownSeconds: 300, Quiet: 1}
+		for i := 0; i < count; i++ {
+			settings.CountdownSeconds++
+			if err := j.SaveSettings(settings, true); err != nil {
+				t.Fatal(err)
+			}
+		}
+		old, _ := j.Latest()
+		settings.Quiet = 2 | 22<<2 | 7<<7
+		for cut := 0; cut <= RecordSize/4+6; cut++ {
+			f := *base
+			f.budget = cut
+			j = mustOpen(t, &f)
+			_ = j.SaveSettings(settings, true)
+			f.budget = -1
+			j = mustOpen(t, &f)
+			got, ok := j.Latest()
+			want := old
+			want.Sequence++
+			want.Settings = settings
+			if !ok || (got != old && got != want) {
+				t.Fatal("torn quiet settings lost or mixed snapshot", count, cut, got)
+			}
+		}
+	}
+}
+
 func TestTouchWakeRecordCompatibility(t *testing.T) {
 	r := Record{HasSettings: true, Settings: Settings{CountdownSeconds: 300}}
 	b := encode(r)

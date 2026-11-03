@@ -48,6 +48,10 @@ const (
 	pageHealth
 	pageWatchGraph
 	pageHeartSignal
+	pageQuickControls
+	pageQuietHours
+	pageBatteryHistory
+	pageBatteryUsage
 )
 
 type uiAction uint8
@@ -72,6 +76,10 @@ type watchUI struct {
 	lightMode      bool
 	brightness     uint8
 	batteryChoice  batteryChoice
+	batteryOrigin  page
+	quiet          uint16
+	battery        *batteryHistory
+	batteryBack    page
 	phoneAuto      bool
 	holding        bool
 	holdSince      time.Time
@@ -178,6 +186,33 @@ func (u *watchUI) handle(e inputEvent, now time.Time, state updateState, power p
 	if u.handlePowerNotice(e) {
 		return actionNone
 	}
+	if u.page == pageQuickControls {
+		u.handleQuickControls(e)
+		return actionNone
+	}
+	if u.page == pageQuietHours {
+		u.handleQuietHours(e)
+		return actionNone
+	}
+	if u.page == pageBatteryHistory {
+		if e.Kind == inputSwipeRight || backButtonTapped(e) {
+			u.page = u.batteryBack
+		} else if e.Kind == inputSwipeLeft {
+			u.page = pageBatteryUsage
+		}
+		return actionNone
+	}
+	if u.page == pageBatteryUsage {
+		if e.Kind == inputSwipeRight || backButtonTapped(e) {
+			u.page = pageBatteryHistory
+		}
+		return actionNone
+	}
+	if u.page == pageClock && state != firmwareTrial &&
+		e.Kind == inputTap && inRect(e, 184, 0, 240, 36) {
+		u.batteryBack, u.page = u.page, pageBatteryHistory
+		return actionNone
+	}
 	if u.page == pageHealth {
 		u.handleHealth(e)
 		return actionNone
@@ -257,6 +292,10 @@ func (u *watchUI) handle(e inputEvent, now time.Time, state updateState, power p
 		}
 		return actionNone
 	}
+	if u.page == pageClock && e.Kind == inputSwipeDown && state != firmwareTrial {
+		u.page = pageQuickControls
+		return actionNone
+	}
 	if u.page == pageUpdate {
 		if e.Kind == inputPress {
 			u.cancelHold()
@@ -289,7 +328,9 @@ func (u *watchUI) handle(e inputEvent, now time.Time, state updateState, power p
 	switch u.page {
 	case pageClock:
 		if state != firmwareTrial {
-			if inRect(e, 12, 42, 114, 76) {
+			if inRect(e, 88, 0, 160, 40) {
+				u.page = pageQuickControls
+			} else if inRect(e, 12, 42, 114, 76) {
 				u.page = pageApps
 			} else if inRect(e, 126, 42, 228, 76) {
 				u.page = pageSettings
@@ -443,6 +484,22 @@ const updateCounterBaseline = 122
 const updateProgressY = 134
 
 func (u *watchUI) draw(d canvas, now time.Time) {
+	if u.page == pageQuickControls {
+		u.drawQuickControls(d, now)
+		return
+	}
+	if u.page == pageQuietHours {
+		u.drawQuietHours(d, now)
+		return
+	}
+	if u.page == pageBatteryHistory {
+		u.drawBatteryHistory(d)
+		return
+	}
+	if u.page == pageBatteryUsage {
+		u.drawBatteryUsage(d)
+		return
+	}
 	if u.page == pageHeartSignal {
 		u.drawHeartSignal(d)
 		return
@@ -501,7 +558,7 @@ func (u *watchUI) draw(d canvas, now time.Time) {
 		return
 	}
 	if u.page == pageInbox || u.page == pageNotification {
-		u.drawNotifications(d)
+		u.drawNotifications(d, now)
 		return
 	}
 	if u.page == pageDisplaySettings {

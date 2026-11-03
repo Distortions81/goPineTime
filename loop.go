@@ -24,7 +24,7 @@ func (l *watchLoop) run() error {
 	var previous frameKey
 	painted, awake := false, true
 	flipped := false
-	power := l.display.PowerStatus()
+	power := l.samplePower()
 	nextPower := l.now().Add(powerPollInterval)
 	l.display.SetTouchWake(l.ui.touchWake)
 	// TinyGo treats callbacks passed through the renderer as escaping. Allocate
@@ -36,7 +36,7 @@ func (l *watchLoop) run() error {
 			return wrapError("wake for alert", err)
 		}
 		awake, painted = true, false
-		power = l.display.PowerStatus()
+		power = l.samplePower()
 		nextPower = l.now().Add(powerPollInterval)
 		l.renderer.invalidate()
 		return nil
@@ -44,7 +44,7 @@ func (l *watchLoop) run() error {
 	for {
 		now := l.now()
 		if awake && !now.Before(nextPower) {
-			power = l.display.PowerStatus()
+			power = l.samplePower()
 			nextPower = now.Add(powerPollInterval)
 		}
 		if !l.sync.directMode && l.ui.tickTimers(now, l.state()) {
@@ -91,6 +91,7 @@ func (l *watchLoop) run() error {
 				wakeAt = due
 			}
 		}
+		l.ui.observeBatteryUsage(now, awake, exclusive)
 		if awake {
 			if flipped != l.ui.flipScreen {
 				if err := l.display.SetFlipped(l.ui.flipScreen); err != nil {
@@ -132,7 +133,7 @@ func (l *watchLoop) run() error {
 			if (l.ui.page == pagePhone || l.ui.page == pagePairingSettings) && l.ui.phone != nil {
 				l.ui.phone.setupRequested, l.ui.phone.advertiseRequested = true, true
 			}
-			power = l.display.PowerStatus()
+			power = l.samplePower()
 			nextPower = now.Add(powerPollInterval)
 			l.renderer.invalidate()
 		}
@@ -148,7 +149,18 @@ func (l *watchLoop) run() error {
 			l.action(action)
 			painted = false
 		}
+		l.ui.observeBatteryUsage(now, awake, l.ui.updateExclusive() || l.sync.directMode)
 	}
+}
+
+// Sampling already happens at boot, wake, and awake power deadlines. Keep its
+// history timestamp and call temporaries off the long-lived event-loop frame.
+//
+//go:noinline
+func (l *watchLoop) samplePower() powerStatus {
+	power := l.display.PowerStatus()
+	l.ui.recordBattery(l.now(), power)
+	return power
 }
 
 // Keep transient frame-key copies off the loop's permanent stack frame while

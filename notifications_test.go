@@ -39,8 +39,6 @@ func sampleNotifications() *notificationState {
 func notificationPreview(kind string) *notificationState {
 	n := sampleNotifications()
 	switch kind {
-	case "quiet":
-		n.quiet = true
 	case "read":
 		n.selected = n.inbox.At(2).ID
 		n.inbox.Read(n.selected)
@@ -79,13 +77,13 @@ func TestNotificationControllerBoundedAndOptIn(t *testing.T) {
 	if u.notificationVibrating(until) {
 		t.Fatal("pulse failed to end")
 	}
-	u.notifications.quiet = true
+	u.quiet |= quietManual
 	r.packets = [][]byte{notificationPacket("Quiet message")}
 	c.update(&u, now.Add(time.Minute), 80)
 	if u.notificationVibrating(now.Add(time.Minute)) || u.unreadNotifications() != 4 {
 		t.Fatal("quiet discarded or buzzed")
 	}
-	u.notifications.quiet = false
+	u.quiet &^= quietManual
 	u.timers.active = true
 	u.page = pageAlert
 	r.packets = [][]byte{notificationPacket("During alarm")}
@@ -237,7 +235,7 @@ func TestNotificationDeadlineAndSuppression(t *testing.T) {
 	if u.notificationVibrating(now.Add(30 * time.Millisecond)) {
 		t.Fatal("notification resumed after alarm")
 	}
-	u.notifications.quiet = true
+	u.quiet |= quietManual
 	r.packets = [][]byte{notificationPacket("Silent")}
 	u.receiveNotifications(r, now.Add(time.Minute))
 	if got := nextLoopDelay(now.Add(time.Minute), &u, now.Add(2*time.Minute), false); got != noDeadlineDelay {

@@ -43,6 +43,8 @@ const (
 	inputSwipeRight
 	inputSleep
 	inputPower
+	inputSwipeUp
+	inputSwipeDown
 )
 
 type inputEvent struct {

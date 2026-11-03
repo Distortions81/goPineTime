@@ -91,3 +91,35 @@ func TestAutomaticWakeAllowsFreshTapButSuppressesExistingContact(t *testing.T) {
 		t.Fatal("wake rearmed a lost contact")
 	}
 }
+
+func TestVerticalSwipesRequireFreshContactAndSurviveQueue(t *testing.T) {
+	now := time.Unix(0, 0)
+	for _, tc := range []struct {
+		from, to int16
+		want     inputKind
+	}{{40, 200, inputSwipeDown}, {200, 40, inputSwipeUp}, {100, 125, inputRelease}} {
+		var tracker touchTracker
+		tracker.decode(touchData(true, 120, tc.from), now)
+		e := tracker.decode(touchData(false, 120, tc.to), now.Add(200*time.Millisecond))
+		if e.Kind != tc.want {
+			t.Fatal("vertical swipe decoded incorrectly", e)
+		}
+		if tc.want != inputRelease {
+			flipped := orientInput(e.inputEvent, true)
+			if flipped.Kind == e.Kind || orientInput(flipped, true) != e.inputEvent {
+				t.Fatal("vertical swipe did not rotate")
+			}
+		}
+		var queue touchQueue
+		queue.push(touchEvent{Activity: true, inputEvent: inputEvent{Kind: inputHold}})
+		queue.push(e)
+		if queue.n != 1 || queue.pop().Kind != tc.want {
+			t.Fatal("vertical release retained stale hold or lost swipe")
+		}
+		tracker.decode(touchData(true, 120, tc.from), now)
+		tracker.cancel()
+		if e := tracker.decode(touchData(false, 120, tc.to), now.Add(200*time.Millisecond)); e.Kind != inputRelease {
+			t.Fatal("suppressed wake contact opened controls", e)
+		}
+	}
+}

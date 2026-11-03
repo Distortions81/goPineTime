@@ -16,6 +16,12 @@ func orientInput(e inputEvent, flipped bool) inputEvent {
 	case inputSwipeRight:
 		e.Kind = inputSwipeLeft
 		e.X, e.Y = 239-e.X, 239-e.Y
+	case inputSwipeUp:
+		e.Kind = inputSwipeDown
+		e.X, e.Y = 239-e.X, 239-e.Y
+	case inputSwipeDown:
+		e.Kind = inputSwipeUp
+		e.X, e.Y = 239-e.X, 239-e.Y
 	}
 	return e
 }
@@ -31,18 +37,9 @@ func (u *watchUI) handleDisplaySettings(e inputEvent) {
 	case inRect(e, 16, 42, 224, 82):
 		u.lightMode = !u.lightMode
 	case inRect(e, 16, 88, 224, 128):
-		next := (validBrightness(u.brightness) + 1) % 3
-		if backlightChannels(next, true) > backlightChannels(u.brightness, true) {
-			u.askBattery(batteryHigh + batteryChoice(next))
-		} else {
-			u.brightness = next
-		}
+		u.cycleBrightness()
 	case inRect(e, 16, 134, 224, 174):
-		if u.touchWake {
-			u.touchWake = false
-		} else {
-			u.askBattery(batteryTouch)
-		}
+		u.toggleTouchWake()
 	case inRect(e, 16, 180, 224, 220):
 		u.flipScreen = !u.flipScreen
 	}

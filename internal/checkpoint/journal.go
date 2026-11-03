@@ -52,9 +52,10 @@ type Settings struct {
 	TouchWake        bool
 	FlipScreen       bool
 	PhoneAuto        bool
-	Display          uint8 // Theme/brightness in bits 0–2, activity in bits 3–7 (versioned below).
-	WatchGraph       uint8 // 0: off, 1: heart rate, 2: steps/minute.
-	ActivityFormat   uint8 // 0: legacy three-mode HR; 1: scheduled-only HR.
+	Display          uint8  // Theme/brightness in bits 0–2, activity in bits 3–7 (versioned below).
+	WatchGraph       uint8  // 0: off, 1: heart rate, 2: steps/minute.
+	ActivityFormat   uint8  // 0: legacy three-mode HR; 1: scheduled-only HR.
+	Quiet            uint16 // Manual/scheduled flags, two 5-bit hours, configured bit. Zero: off.
 }
 
 func (s Settings) LightMode() bool   { return s.Display&1 != 0 }
@@ -117,6 +118,9 @@ func (r Runtime) valid() bool {
 }
 
 func (s Settings) valid() bool {
+	if s.Quiet>>13 != 0 || s.Quiet>>2&31 > 23 || s.Quiet>>7&31 > 23 {
+		return false
+	}
 	if s.CountdownSeconds == 0 || s.CountdownSeconds >= 24*60*60 || s.Display&7 > 5 || s.WatchGraph > 2 || s.ActivityFormat > 1 {
 		return false
 	}
@@ -331,6 +335,7 @@ func encode(r Record) [RecordSize]byte {
 	b[147] = r.Settings.Display
 	b[148] = r.Settings.WatchGraph
 	b[149] = r.Settings.ActivityFormat
+	binary.LittleEndian.PutUint16(b[150:152], r.Settings.Quiet)
 	binary.LittleEndian.PutUint32(b[RecordSize-8:RecordSize-4], ieeecrc.Checksum(b[:RecordSize-8]))
 	binary.LittleEndian.PutUint32(b[RecordSize-4:], recordCommit)
 	return b
@@ -367,10 +372,8 @@ func decode(b *[RecordSize]byte) (Record, bool) {
 	r.Settings.Display = b[147]
 	r.Settings.WatchGraph = b[148]
 	r.Settings.ActivityFormat = b[149]
+	r.Settings.Quiet = binary.LittleEndian.Uint16(b[150:152])
 	valid = valid && b[60]>>4 == 0 && b[144] <= 1 && b[145] <= 1 && b[146] <= 1
-	for _, v := range b[150 : RecordSize-8] {
-		valid = valid && v == 0
-	}
 	valid = valid && (!r.HasSettings || r.Settings.valid()) && (!r.HasRuntime || (r.HasSettings && r.Runtime.valid()))
 	return r, valid
 }

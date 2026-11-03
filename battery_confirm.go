@@ -22,6 +22,7 @@ const (
 
 func (u *watchUI) askBattery(choice batteryChoice) {
 	u.cancelHold()
+	u.batteryOrigin = u.page
 	u.batteryChoice, u.page = choice, pageBatteryConfirm
 }
 
@@ -43,8 +44,8 @@ func (u *watchUI) handleBatteryConfirm(e inputEvent, now time.Time) {
 		}
 	case batteryBuzz:
 		u.page = pageInbox
-		if confirm && u.notifications != nil {
-			u.notifications.quiet = false
+		if confirm {
+			u.quiet &^= quietManual
 		}
 	case batteryTouch:
 		if confirm {
@@ -55,6 +56,13 @@ func (u *watchUI) handleBatteryConfirm(e inputEvent, now time.Time) {
 			u.brightness = uint8(choice - batteryHigh)
 		}
 	}
+	if u.batteryOrigin == pageQuickControls {
+		u.page = pageQuickControls
+		if e.Kind == inputSleep {
+			u.page = pageClock
+		}
+	}
+	u.batteryOrigin = pageClock
 }
 
 func batteryCopy(choice batteryChoice) (title string, lines [4]string) {

@@ -203,6 +203,22 @@ func (u *watchUI) frameKey(now time.Time, power powerStatus) frameKey {
 	if u.page == pageBatteryConfirm {
 		key.step = int(u.batteryChoice)
 	}
+	if u.page == pageQuietHours {
+		key.syncPending = u.scheduledQuiet(now)
+	} else if u.page == pageQuickControls || u.page == pageInbox {
+		key.syncPending = u.notificationQuiet(now)
+	}
+	if u.page == pageQuickControls || u.page == pageQuietHours {
+		key.step = int(u.quiet)
+		key.syncOpen = u.phoneAuto || (u.phone != nil && u.phone.mode != phoneOff)
+	}
+	if u.page == pageBatteryHistory && u.battery != nil {
+		key.weatherRevision = u.battery.revision
+	}
+	if u.page == pageBatteryUsage && u.battery != nil {
+		key.clockMinute = now.Unix() / 60
+		key.weatherRevision = uint32(u.battery.usage.sleepWindows) | uint32(u.battery.usage.cycles)<<8
+	}
 	if u.page == pageHealth {
 		key.step = int(u.healthOptions)
 		if u.health != nil {
@@ -241,7 +257,7 @@ func (u *watchUI) frameKey(now time.Time, power powerStatus) frameKey {
 	if (u.page == pageInbox || u.page == pageNotification) && u.notifications != nil {
 		n := u.notifications
 		key.notificationRevision, key.weatherRevision = n.inbox.Revision, n.selected
-		key.step, key.touchWake = n.offset, n.quiet
+		key.step, key.touchWake = n.offset, u.quiet&quietManual != 0
 	}
 	if u.page == pageTransfer && u.transfer != nil {
 		t := u.transfer

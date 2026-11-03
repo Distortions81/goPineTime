@@ -11,7 +11,6 @@ type notificationState struct {
 	inbox               notifications.Inbox
 	selected            uint32
 	offset              int
-	quiet               bool
 	buzzUntil, lastBuzz time.Time
 }
 
@@ -57,8 +56,8 @@ func (u *watchUI) receiveNotifications(r timeRadio, now time.Time) {
 		if !n.inbox.Add(packet[:size]) {
 			continue
 		}
-		if !n.quiet && !u.timers.active && (n.lastBuzz.IsZero() || now.Sub(n.lastBuzz) >= notificationBuzzGap) {
-			n.lastBuzz, n.buzzUntil = now, now.Add(notificationPulse)
+		if !u.notificationQuiet(now) && !u.timers.active && (n.lastBuzz.IsZero() || now.Sub(n.lastBuzz) >= notificationBuzzGap) {
+			n.lastBuzz, n.buzzUntil = now, u.notificationBuzzDeadline(now)
 		}
 	}
 }
@@ -87,8 +86,8 @@ func (u *watchUI) receiveAppleNotifications(r timeRadio, now time.Time) {
 		}
 		n := u.notifications
 		_, buzz := n.inbox.ApplyApple(packet[:])
-		if buzz && !n.quiet && !u.timers.active && (n.lastBuzz.IsZero() || now.Sub(n.lastBuzz) >= notificationBuzzGap) {
-			n.lastBuzz, n.buzzUntil = now, now.Add(notificationPulse)
+		if buzz && !u.notificationQuiet(now) && !u.timers.active && (n.lastBuzz.IsZero() || now.Sub(n.lastBuzz) >= notificationBuzzGap) {
+			n.lastBuzz, n.buzzUntil = now, u.notificationBuzzDeadline(now)
 		}
 	}
 }
@@ -98,7 +97,7 @@ func (u *watchUI) notificationVibrating(now time.Time) bool {
 	if n == nil {
 		return false
 	}
-	if u.timers.active || n.quiet {
+	if u.timers.active || u.notificationQuiet(now) {
 		n.buzzUntil = time.Time{}
 	}
 	return now.Before(n.buzzUntil)
@@ -141,12 +140,7 @@ func (u *watchUI) handleNotifications(e inputEvent, state updateState) {
 	}
 	switch {
 	case inRect(e, 12, 42, 114, 74):
-		if n.quiet {
-			u.askBattery(batteryBuzz)
-		} else {
-			n.quiet = true
-		}
-		n.buzzUntil = time.Time{}
+		u.toggleBuzz()
 	case inRect(e, 126, 42, 228, 74):
 		n.inbox.Clear()
 		n.selected, n.offset = 0, 0
@@ -206,7 +200,7 @@ func notificationText(m *notifications.Message) (data [142]byte, size int) {
 	return
 }
 
-func (u *watchUI) drawNotifications(d canvas) {
+func (u *watchUI) drawNotifications(d canvas, now time.Time) {
 	n := u.notifications
 	if n == nil {
 		return
@@ -214,8 +208,10 @@ func (u *watchUI) drawNotifications(d canvas) {
 	if u.page == pageInbox {
 		centered(d, &uifont.Regular18, 29, "INBOX", white)
 		label, c := "BUZZ ON", card
-		if n.quiet {
+		if u.quiet&quietManual != 0 {
 			label, c = "QUIET", positive
+		} else if u.scheduledQuiet(now) {
+			label, c = "HOURS", positive
 		}
 		clockControl(d, 12, 42, 102, 32, label, c)
 		clockControl(d, 126, 42, 102, 32, "CLEAR ALL", card)

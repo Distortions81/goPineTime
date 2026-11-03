@@ -11,9 +11,10 @@ import (
 // catches palette resolution after antialiasing and stale strips on a toggle.
 func TestThemeToggleMatchesFullFrame(t *testing.T) {
 	now := time.Date(2026, 10, 11, 12, 34, 0, 0, time.UTC)
-	for _, p := range []page{pageClock, pageSettings, pageDisplaySettings, pageBatteryConfirm, pageApps, pagePhone, pageMusic, pagePairingSettings, pageStopwatch, pageCountdown, pageUpdate, pageTrial, pageInbox, pageNotification, pageTransfer} {
+	for _, p := range []page{pageClock, pageSettings, pageDisplaySettings, pageBatteryConfirm, pageApps, pagePhone, pageMusic, pagePairingSettings, pageStopwatch, pageCountdown, pageUpdate, pageTrial, pageInbox, pageNotification, pageTransfer, pageQuickControls, pageQuietHours, pageBatteryHistory, pageBatteryUsage} {
 		u := newWatchUI(firmwareConfirmed)
 		u.page, u.phone, u.notifications = p, samplePhone(now), sampleNotifications()
+		u.battery = sampleBatteryHistory()
 		u.batteryChoice = batteryTouch
 		u.pairing = &pairingState{status: 2, count: 2}
 		u.transfer = &transferState{phase: updateReceiving, percent: 58}

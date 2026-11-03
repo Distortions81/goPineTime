@@ -7,7 +7,7 @@ import (
 )
 
 func TestFlippedTouchCoordinatesAndGestures(t *testing.T) {
-	for _, kind := range []inputKind{inputTap, inputPress, inputHold, inputRelease, inputSwipeLeft, inputSwipeRight} {
+	for _, kind := range []inputKind{inputTap, inputPress, inputHold, inputRelease, inputSwipeLeft, inputSwipeRight, inputSwipeUp, inputSwipeDown} {
 		for _, point := range [][2]int16{{0, 0}, {239, 239}, {17, 205}} {
 			original := inputEvent{Kind: kind, X: point[0], Y: point[1], Held: 3 * time.Second}
 			got := orientInput(original, true)

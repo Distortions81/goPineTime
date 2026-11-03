@@ -24,6 +24,10 @@ func drawBackButton(d canvas) {
 // Static, muted hints above the clock leave the graph/message area free and
 // make the two opposite swipe destinations visible without an overlay.
 func drawClockMenuHints(d canvas) {
+	// Tap or swipe down for controls. Keep the cue between branding and the
+	// battery status so the clock and graph areas stay available.
+	gfx.Line(d, 114, 22, 120, 28, muted)
+	gfx.Line(d, 120, 28, 126, 22, muted)
 	writeLine(d, &uifont.Regular18, 16, 61, "Apps", muted)
 	appsWidth, _ := lineWidth(&uifont.Regular18, "Apps")
 	x := 16 + int16(appsWidth) + 9
